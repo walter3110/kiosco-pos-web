@@ -62,7 +62,7 @@ main {
 
 .tabs {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 5;
-  display: grid; grid-template-columns: repeat(5, 1fr);
+  display: grid; grid-template-columns: repeat(4, 1fr);
   background: var(--blanco); border-top: 1px solid var(--borde);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -204,3 +204,19 @@ main.ancho { max-width: 1100px; }
 .nro { font-weight: 800; }
 
 .sub { font-size: .8rem; color: var(--gris); }
+
+/* ---- Escáner ---- */
+.escaner { position: fixed; inset: 0; z-index: 40; background: #000; }
+.escaner video { width: 100%; height: 100%; object-fit: cover; }
+.esc-marco {
+  position: absolute; left: 10%; right: 10%; top: 35%; height: 22%;
+  border: 3px solid var(--celeste); border-radius: 14px;
+  box-shadow: 0 0 0 100vmax rgba(0,0,0,.45);
+}
+.esc-marco::after { content: ''; position: absolute; left: 6%; right: 6%; top: 50%; height: 2px; background: #ef4444; animation: barrido 1.6s ease-in-out infinite; }
+@keyframes barrido { 0%,100% { transform: translateY(-40px); } 50% { transform: translateY(40px); } }
+.esc-pie {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+  color: #fff; text-align: center; display: grid; gap: 12px;
+}

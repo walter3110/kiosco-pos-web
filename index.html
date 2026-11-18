@@ -29,12 +29,22 @@
   <nav class="tabs">
     <button data-tab="vender" class="activo"><span>🛒</span>Vender</button>
     <button data-tab="productos"><span>📦</span>Productos</button>
-    <button data-tab="fiado"><span>📒</span>Fiado</button>
     <button data-tab="caja"><span>💵</span>Caja</button>
     <button data-tab="mas"><span>📊</span>Más</button>
   </nav>
 
   <div id="modal" class="modal oculto"><div class="modal-caja" id="modal-contenido"></div></div>
+  <div id="escaner" class="escaner oculto">
+    <video id="esc-video" playsinline muted></video>
+    <div class="esc-marco"></div>
+    <div class="esc-pie">
+      <div id="esc-estado">Abriendo cámara…</div>
+      <div class="fila">
+        <button class="btn gris" id="esc-manual">⌨ Escribir</button>
+        <button class="btn cancelar" id="esc-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
   <div id="toast" class="toast oculto"></div>
 
   <script src="app.js"></script>
