@@ -64,7 +64,7 @@ main {
 
 .tabs {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 5;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--blanco); border-top: 1px solid var(--borde);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -349,3 +349,10 @@ kbd, .kbd {
   #negocio { font-size: 1.05rem; font-weight: 700; color: var(--gris); opacity: 1; }
 }
 @media (max-width: 560px) { .lector input { font-size: 1rem; } }
+
+/* ---- Inventario ---- */
+.stats4 { grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 900px) { .stats4 { grid-template-columns: repeat(4, 1fr); } }
+.etiqueta.medio { background: #fef3c7; color: #b45309; }
+.acciones { display: flex; gap: 6px; flex: 0 0 auto; }
+@media (max-width: 560px) { .acciones { flex-direction: column; } .tabs button { font-size: .66rem; } }

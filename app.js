@@ -2,7 +2,7 @@
    Todo se guarda en el navegador (localStorage). Sin servidor. */
 
 const CLAVE = 'kiosco_pos_v1';
-const VERSION = '2.2 · WRC tech';
+const VERSION = '2.3 · inventario';
 let pedidoInstalar = null;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); pedidoInstalar = e; if (tab === 'mas') render(); });
 window.addEventListener('appinstalled', () => { pedidoInstalar = null; toast('¡App instalada!'); });
@@ -15,7 +15,8 @@ const datosIniciales = () => ({
   ultimoNro: 0,
   productos: [],
   ventas: [],
-  cajas: {}, // { 'AAAA-MM-DD': { inicial, cerrada, contado, cierre } }
+  cajas: {},
+  movimientos: [], // ingresos de mercadería y ajustes de stock // { 'AAAA-MM-DD': { inicial, cerrada, contado, cierre } }
 });
 
 let db = cargar();
@@ -82,10 +83,11 @@ const TITULOS = {
   vender: ['Venta actual', 'Agregar productos a la venta'],
   productos: ['Productos', 'Precios, stock y categorías'],
   caja: ['Caja del día', 'Ventas, medios de pago y cierre'],
+  inventario: ['Inventario', 'Ingreso de mercadería, ajustes y stock'],
   mas: ['Reportes y ajustes', 'Cómo viene el negocio'],
 };
 let tab = 'vender';
-$('#campana').addEventListener('click', () => { soloBajo = true; filtroProd = ''; irA('productos'); });
+$('#campana').addEventListener('click', () => { vistaInv = 'stock'; filtroInv = ''; irA('inventario'); });
 document.querySelectorAll('.tabs button').forEach((b) =>
   b.addEventListener('click', () => irA(b.dataset.tab))
 );
@@ -106,7 +108,7 @@ function render() {
   const bajos = db.productos.filter((p) => p.stock <= (p.stockMin || 0)).length;
   $('#badge').textContent = bajos;
   $('#badge').classList.toggle('oculto', !bajos);
-  ({ vender: vistaVender, productos: vistaProductos, caja: vistaCaja, mas: vistaMas })[tab]();
+  ({ vender: vistaVender, productos: vistaProductos, inventario: vistaInventario, caja: vistaCaja, mas: vistaMas })[tab]();
 }
 
 // ================= VENDER =================
@@ -675,6 +677,178 @@ function aumentoMasivo() {
   };
 }
 
+// ================= INVENTARIO =================
+const MOTIVOS = ['Conteo / diferencia', 'Rotura', 'Vencido', 'Robo / faltante', 'Consumo propio', 'Devolución a proveedor', 'Otro'];
+let filtroInv = '';
+let vistaInv = 'stock'; // stock | movimientos
+
+function vistaInventario() {
+  const prods = db.productos;
+  const valorCosto = prods.reduce((a, p) => a + Math.max(0, p.stock) * (p.costo || 0), 0);
+  const valorVenta = prods.reduce((a, p) => a + Math.max(0, p.stock) * (p.precio || 0), 0);
+  const sinStock = prods.filter((p) => p.stock <= 0).length;
+  const bajos = prods.filter((p) => p.stock > 0 && p.stock <= (p.stockMin || 0)).length;
+  const lista = prods
+    .filter((p) => !filtroInv || p.nombre.toLowerCase().includes(filtroInv.toLowerCase()) || (p.codigo || '').includes(filtroInv))
+    .sort((a, b) => (a.stock - (a.stockMin || 0)) - (b.stock - (b.stockMin || 0)) || a.nombre.localeCompare(b.nombre));
+  const movs = (db.movimientos || []).slice(-60).reverse();
+
+  $('#app').innerHTML = `
+    <div class="stats stats4">
+      <div class="stat"><div class="v">${plata(valorCosto)}</div><div class="l">Stock valorizado (a costo)</div></div>
+      <div class="stat"><div class="v verde">${plata(valorVenta)}</div><div class="l">Stock a precio de venta</div></div>
+      <div class="stat"><div class="v rojo">${sinStock}</div><div class="l">Sin stock</div></div>
+      <div class="stat"><div class="v" style="color:#b45309">${bajos}</div><div class="l">Stock bajo</div></div>
+    </div>
+
+    <div class="tarjeta">
+      <h2>📥 Ingreso de mercadería</h2>
+      <div class="lector">
+        <div class="lector-tit"><span>📟 Escaneá lo que entra del proveedor</span><span class="lector-estado"></span></div>
+        <div class="fila">
+          <input id="inv-lector" placeholder="Código del producto y Enter" autocomplete="off" inputmode="numeric">
+          <button class="btn primario fijo" id="inv-scan" title="Escanear con la cámara">📷</button>
+        </div>
+      </div>
+      <div class="sub" style="margin-top:6px">También podés tocar <b>Ingreso</b> en cualquier producto de la lista.</div>
+    </div>
+
+    <div class="pagos" style="grid-template-columns:1fr 1fr">
+      <button data-vinv="stock" class="${vistaInv === 'stock' ? 'activo' : ''}">📋 Stock actual</button>
+      <button data-vinv="movimientos" class="${vistaInv === 'movimientos' ? 'activo' : ''}">🕓 Movimientos</button>
+    </div>
+
+    ${vistaInv === 'stock' ? `
+    <div class="tarjeta">
+      <input id="inv-filtro" placeholder="🔍  Filtrar por nombre o código" value="${esc(filtroInv)}">
+      ${lista.length ? `<ul class="lista">${lista.map((p) => {
+        const estado = p.stock <= 0 ? ['bajo', 'Sin stock'] : p.stock <= (p.stockMin || 0) ? ['medio', 'Bajo'] : ['ok', 'OK'];
+        return `<li>
+          <div class="info">
+            <div class="nombre">${p.porPeso ? '⚖️ ' : ''}${esc(p.nombre)}</div>
+            <div class="sub">${p.codigo ? 'Cód. ' + esc(p.codigo) + ' · ' : ''}mín. ${p.porPeso ? kg(p.stockMin || 0) + ' kg' : (p.stockMin || 0)}</div>
+          </div>
+          <span class="etiqueta ${estado[0]}">${stockTxt(p)}</span>
+          <div class="acciones">
+            <button class="btn chico" data-ing="${p.id}">+ Ingreso</button>
+            <button class="btn chico gris" data-aj="${p.id}">Ajustar</button>
+          </div>
+        </li>`;
+      }).join('')}</ul>` : `<div class="vacio">${prods.length ? 'Sin coincidencias' : 'Todavía no hay productos cargados'}</div>`}
+    </div>` : `
+    <div class="tarjeta">
+      ${movs.length ? `<ul class="lista">${movs.map((m) => `
+        <li>
+          <div class="info">
+            <div class="nombre">${esc(m.nombre)}</div>
+            <div class="sub">${new Date(m.fecha).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · ${m.tipo === 'ingreso' ? 'Ingreso' : 'Ajuste: ' + esc(m.motivo)}${m.usuario ? ' · ' + esc(m.usuario) : ''}</div>
+          </div>
+          <div class="monto ${m.cant >= 0 ? 'verde' : 'rojo'}">${m.cant >= 0 ? '+' : '−'}${m.porPeso ? kg(Math.abs(m.cant)) + ' kg' : Math.abs(m.cant)}</div>
+        </li>`).join('')}</ul>` : '<div class="vacio">Todavía no hay movimientos. Los ingresos y ajustes aparecen acá.</div>'}
+    </div>`}
+  `;
+
+  const lec = $('#inv-lector');
+  lec.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const q = lec.value.trim();
+    if (!q) return;
+    lec.value = '';
+    ingresoPorCodigo(q);
+  });
+  $('#inv-scan').onclick = () => escanear(ingresoPorCodigo);
+  document.querySelectorAll('[data-vinv]').forEach((b) => (b.onclick = () => { vistaInv = b.dataset.vinv; vistaInventario(); }));
+  const f = $('#inv-filtro');
+  if (f) f.addEventListener('input', () => { filtroInv = f.value; const pos = f.selectionStart; vistaInventario(); const n = $('#inv-filtro'); n.focus(); n.setSelectionRange(pos, pos); });
+  document.querySelectorAll('[data-ing]').forEach((b) => (b.onclick = () => ingresoMercaderia(db.productos.find((p) => p.id === b.dataset.ing))));
+  document.querySelectorAll('[data-aj]').forEach((b) => (b.onclick = () => ajustarStock(db.productos.find((p) => p.id === b.dataset.aj))));
+  if (!esTactil() && !filtroInv) lec.focus();
+}
+
+function ingresoPorCodigo(codigo) {
+  const p = db.productos.find((x) => x.codigo === codigo);
+  if (p) return ingresoMercaderia(p);
+  abrirModal(`
+    <div style="text-align:center"><div style="font-size:2.4rem">❓</div><h2>Código no encontrado</h2>
+    <div class="sub" style="font-size:1rem">El código <b>${esc(codigo)}</b> no está cargado. Si es un producto nuevo, crealo y poné el stock que entra.</div></div>
+    <div class="modal-botones"><button class="btn gris" id="cn-no">Cerrar</button><button class="btn primario" id="cn-crear">Crear producto</button></div>`);
+  $('#cn-no').onclick = cerrarModal;
+  $('#cn-crear').onclick = () => editarProducto(null, codigo);
+}
+
+function registrarMovimiento(p, tipo, cant, motivo = '') {
+  db.movimientos = db.movimientos || [];
+  db.movimientos.push({ id: uid(), fecha: new Date().toISOString(), productoId: p.id, nombre: p.nombre, porPeso: !!p.porPeso, tipo, cant: red3(cant), motivo, stockFinal: p.stock, usuario: db.cajero || '' });
+  if (db.movimientos.length > 5000) db.movimientos = db.movimientos.slice(-5000);
+}
+
+function ingresoMercaderia(p) {
+  if (!p) return;
+  const u = p.porPeso ? 'kg' : 'unidades';
+  abrirModal(`
+    <h2>📥 Ingreso: ${esc(p.nombre)}</h2>
+    <div class="sub">Stock actual: <b>${stockTxt(p)}</b></div>
+    <label>Cantidad que entra (${u}) *</label>
+    <input id="i-cant" inputmode="decimal" placeholder="${p.porPeso ? 'Ej: 2,5' : 'Ej: 24'}" style="font-size:1.3rem;font-weight:700">
+    <div class="billetes">${(p.porPeso ? [0.5, 1, 2, 5] : [6, 12, 24, 48]).map((n) => `<button data-q="${n}">+${String(n).replace('.', ',')}</button>`).join('')}</div>
+    <div class="grilla2">
+      <div><label>Costo ${p.porPeso ? 'por kg' : 'unitario'}</label><input id="i-costo" inputmode="decimal" value="${p.costo || ''}"></div>
+      <div><label>Precio de venta${p.porPeso ? ' por kg' : ''}</label><input id="i-precio" inputmode="decimal" value="${p.precio || ''}"></div>
+    </div>
+    <div id="i-res" class="sub" style="margin-top:8px"></div>
+    <div class="modal-botones"><button class="btn gris" onclick="cerrarModal()">Cancelar</button><button class="btn primario" id="i-ok">Sumar al stock</button></div>`);
+  const res = () => {
+    const c = num($('#i-cant').value);
+    const costo = num($('#i-costo').value), precio = num($('#i-precio').value);
+    const avisoCosto = p.costo && costo && costo !== p.costo ? ` · Costo ${costo > p.costo ? 'subió' : 'bajó'} ${Math.round(((costo - p.costo) / p.costo) * 100)}%` : '';
+    $('#i-res').innerHTML = c > 0 ? `Stock nuevo: <b>${p.porPeso ? kg(red3(p.stock + c)) + ' kg' : red3(p.stock + c) + ' u.'}</b>${costo ? ` · Compra: <b>${plata(c * costo)}</b>` : ''}${avisoCosto}${costo && precio ? ` · Margen ${Math.round(((precio - costo) / costo) * 100)}%` : ''}` : '';
+  };
+  ['#i-cant', '#i-costo', '#i-precio'].forEach((s) => ($(s).oninput = res));
+  document.querySelectorAll('[data-q]').forEach((b) => (b.onclick = () => { $('#i-cant').value = String(red3(num($('#i-cant').value) + num(b.dataset.q))).replace('.', ','); res(); }));
+  $('#i-cant').focus();
+  $('#i-ok').onclick = () => {
+    const c = num($('#i-cant').value);
+    if (c <= 0) return toast('Poné la cantidad que entra');
+    const costo = num($('#i-costo').value), precio = num($('#i-precio').value);
+    if (costo > 0) p.costo = costo;
+    if (precio > 0) p.precio = precio;
+    p.stock = red3(p.stock + c);
+    registrarMovimiento(p, 'ingreso', c);
+    guardar(); cerrarModal(); render();
+    toast(`+${p.porPeso ? kg(c) + ' kg' : c} ${p.nombre}`);
+    if (tab === 'inventario' && !esTactil()) { const l = $('#inv-lector'); if (l) l.focus(); }
+  };
+}
+
+function ajustarStock(p) {
+  if (!p) return;
+  abrirModal(`
+    <h2>Ajustar stock: ${esc(p.nombre)}</h2>
+    <div class="sub">El sistema dice que hay <b>${stockTxt(p)}</b>.</div>
+    <label>¿Cuánto hay realmente? (${p.porPeso ? 'kg' : 'unidades'})</label>
+    <input id="a-real" inputmode="decimal" placeholder="Lo que contaste" style="font-size:1.3rem;font-weight:700">
+    <label>Motivo</label>
+    <select id="a-motivo">${MOTIVOS.map((m) => `<option>${m}</option>`).join('')}</select>
+    <div id="a-dif" class="sub" style="margin-top:8px"></div>
+    <div class="modal-botones"><button class="btn gris" onclick="cerrarModal()">Cancelar</button><button class="btn primario" id="a-ok">Guardar ajuste</button></div>`);
+  $('#a-real').oninput = () => {
+    const v = $('#a-real').value.trim();
+    if (!v) return ($('#a-dif').innerHTML = '');
+    const d = red3(num(v) - p.stock);
+    $('#a-dif').innerHTML = d === 0 ? 'Coincide, no hay diferencia' : `Diferencia: <b class="${d > 0 ? 'verde' : 'rojo'}">${d > 0 ? '+' : '−'}${p.porPeso ? kg(Math.abs(d)) + ' kg' : Math.abs(d)}</b>${p.costo ? ` (${plata(Math.abs(d) * p.costo)} a costo)` : ''}`;
+  };
+  $('#a-ok').onclick = () => {
+    const v = $('#a-real').value.trim();
+    if (v === '') return toast('Poné cuánto hay realmente');
+    const d = red3(num(v) - p.stock);
+    if (d === 0) { cerrarModal(); return toast('Sin diferencia, no se cambió nada'); }
+    p.stock = red3(num(v));
+    registrarMovimiento(p, 'ajuste', d, $('#a-motivo').value);
+    guardar(); cerrarModal(); render(); toast('Stock ajustado');
+  };
+}
+
 // ================= CAJA =================
 let diaCaja = hoy();
 
@@ -938,7 +1112,7 @@ $('#esc-manual').addEventListener('click', () => {
 });
 
 // ================= ATAJOS DE TECLADO =================
-const TABS_ORDEN = ['vender', 'productos', 'caja', 'mas'];
+const TABS_ORDEN = ['vender', 'productos', 'inventario', 'caja', 'mas'];
 document.addEventListener('keydown', (e) => {
   if (e.defaultPrevented) return;
   const modalAbierto = !$('#modal').classList.contains('oculto');
@@ -956,7 +1130,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (e.altKey && /^[1-4]$/.test(e.key)) { e.preventDefault(); irA(TABS_ORDEN[+e.key - 1]); return; }
+  if (e.altKey && /^[1-5]$/.test(e.key)) { e.preventDefault(); irA(TABS_ORDEN[+e.key - 1]); return; }
 
   const teclas = ['F1', 'F2', 'F3', 'F8', 'F9'];
   if (teclas.includes(e.key)) {
