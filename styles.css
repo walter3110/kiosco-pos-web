@@ -334,3 +334,7 @@ kbd, .kbd {
 }
 
 @media (hover: none) { .lector-estado { display: none; } }
+
+.nav-marca b span { font-weight: 400; color: #8fb3e8; }
+.firma { text-align: center; font-size: .78rem; color: var(--gris); margin: 18px 0 6px; }
+.firma b { color: var(--marino); }

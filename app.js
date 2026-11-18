@@ -1,8 +1,8 @@
-/* Kiosco POS — sistema de ventas para kioscos y almacenes.
+/* WRC tech · Punto de venta — sistema de ventas para kioscos y almacenes.
    Todo se guarda en el navegador (localStorage). Sin servidor. */
 
 const CLAVE = 'kiosco_pos_v1';
-const VERSION = '2.0 · paleta caja';
+const VERSION = '2.1 · WRC tech';
 let pedidoInstalar = null;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); pedidoInstalar = e; if (tab === 'mas') render(); });
 window.addEventListener('appinstalled', () => { pedidoInstalar = null; toast('¡App instalada!'); });
@@ -796,7 +796,8 @@ function vistaMas() {
       ${pedidoInstalar ? '<button class="btn primario bloque" id="instalar" style="margin-top:8px">💻 Instalar como app (funciona sin internet)</button>' : ''}
       <div class="sub" style="margin-top:8px">Los datos se guardan solo en este dispositivo. Hacé una copia de seguridad seguido.</div>
       <div class="sub" style="margin-top:8px">Versión ${VERSION}</div>
-    </div>`;
+    </div>
+    <div class="firma">Sistema desarrollado por <b>WRC tech</b></div>`;
 
   document.querySelectorAll('[data-per]').forEach((b) => (b.onclick = () => { periodo = +b.dataset.per; vistaMas(); }));
   $('#neg').onchange = (e) => { db.negocio = e.target.value.trim() || 'Mi Kiosco'; guardar(); render(); };

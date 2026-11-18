@@ -1,4 +1,4 @@
-# Kiosco POS
+# WRC tech · Punto de venta
 
 Sistema de ventas web para kioscos y almacenes. Funciona desde el celular o la compu, sin instalar nada y sin servidor.
 

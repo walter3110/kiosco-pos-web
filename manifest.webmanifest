@@ -1,6 +1,6 @@
 {
-  "name": "Kiosco POS",
-  "short_name": "Kiosco POS",
+  "name": "WRC tech · Punto de venta",
+  "short_name": "WRC POS",
   "description": "Sistema de ventas para kioscos y almacenes",
   "id": "./",
   "start_url": "./",
