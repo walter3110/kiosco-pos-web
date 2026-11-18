@@ -2,6 +2,7 @@
    Todo se guarda en el navegador (localStorage). Sin servidor. */
 
 const CLAVE = 'kiosco_pos_v1';
+const VERSION = '1.3 · escáner';
 const MEDIOS = ['Efectivo', 'Débito', 'Crédito', 'Transferencia', 'Mercado Pago'];
 
 // ---------- Datos ----------
@@ -571,6 +572,7 @@ function vistaMas() {
       <input type="file" id="archivo" accept=".json,application/json" class="oculto">
       <button class="btn bloque" id="demo" style="margin-top:8px">Cargar productos de ejemplo</button>
       <div class="sub" style="margin-top:8px">Los datos se guardan solo en este dispositivo. Hacé una copia de seguridad seguido.</div>
+      <div class="sub" style="margin-top:8px">Versión ${VERSION}</div>
     </div>`;
 
   document.querySelectorAll('[data-per]').forEach((b) => (b.onclick = () => { periodo = +b.dataset.per; vistaMas(); }));
