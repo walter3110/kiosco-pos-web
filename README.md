@@ -10,6 +10,9 @@ Sistema de ventas web para kioscos y almacenes. Funciona desde el celular o la c
 - **Copia de seguridad**: exportar e importar los datos en un archivo.
 - Funciona sin internet y se puede instalar como app ("Agregar a pantalla de inicio").
 
+## Atajos de teclado (PC)
+F1 cobrar · F2 buscar · F3 medio de pago · F4 descuento · F8 importe libre · F9 cancelar venta · ↑↓ + Enter elegir producto · `3*código` cantidad · +/− último producto · Supr quitar último · Esc cerrar · Alt+1..4 pestañas.
+
 ## Importante
 Los datos se guardan en el navegador del dispositivo (localStorage). Si se borran los datos del navegador, se pierden: hacé copias de seguridad desde **Más → Copia de seguridad**.
 

@@ -238,3 +238,23 @@ main.ancho { max-width: 1100px; }
 
 label.check { display: flex; align-items: center; gap: 8px; color: var(--texto); font-size: .92rem; background: var(--azul-claro); padding: 10px 12px; border-radius: 10px; margin-top: 12px; }
 label.check input { width: 20px; height: 20px; flex: 0 0 auto; }
+
+/* ---- Atajos de teclado (solo en PC) ---- */
+.atajos { display: none; flex-wrap: wrap; gap: 6px 14px; font-size: .78rem; color: var(--gris); padding: 4px 4px 0; }
+kbd, .kbd {
+  display: inline-block; min-width: 20px; padding: 1px 6px; margin-right: 3px; border-radius: 5px;
+  border: 1px solid var(--borde); border-bottom-width: 2px; background: var(--blanco);
+  font: 600 .72rem system-ui, sans-serif; color: var(--texto); text-align: center;
+}
+.btn .kbd { background: rgba(255,255,255,.2); border-color: rgba(255,255,255,.5); color: #fff; margin-left: 6px; }
+.kbd { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .atajos { display: flex; }
+  .kbd { display: inline-block; }
+}
+.prod-lista .item.sel { background: var(--azul-claro); box-shadow: inset 4px 0 0 var(--azul); }
+
+@media (min-width: 700px) {
+  .modal { align-items: center; }
+  .modal-caja { border-radius: 16px; max-width: 520px; }
+}

@@ -2,7 +2,7 @@
    Todo se guarda en el navegador (localStorage). Sin servidor. */
 
 const CLAVE = 'kiosco_pos_v1';
-const VERSION = '1.6 · instalable';
+const VERSION = '1.7 · atajos';
 let pedidoInstalar = null;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); pedidoInstalar = e; if (tab === 'mas') render(); });
 window.addEventListener('appinstalled', () => { pedidoInstalar = null; toast('¡App instalada!'); });
@@ -33,6 +33,7 @@ function guardar() {
 }
 
 // ---------- Utilidades ----------
+const esTactil = () => window.matchMedia('(hover: none)').matches;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -63,8 +64,17 @@ function abrirModal(html) {
   $('#toast').classList.add('oculto');
   $('#modal-contenido').innerHTML = html;
   $('#modal').classList.remove('oculto');
+  // Sacar el foco de lo que quedó detrás y ponerlo dentro de la ventana
+  if (document.activeElement) document.activeElement.blur();
+  if (!esTactil()) {
+    const f = document.querySelector('#modal input, #modal select') || document.querySelector('#modal .modal-botones .btn.primario, #modal .modal-botones .btn.cobrar');
+    if (f) f.focus();
+  }
 }
-function cerrarModal() { $('#modal').classList.add('oculto'); }
+function cerrarModal() {
+  $('#modal').classList.add('oculto');
+  if (tab === 'vender' && !esTactil()) { const b = $('#buscar'); if (b) b.focus(); }
+}
 $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') cerrarModal(); });
 
 // ---------- Navegación ----------
@@ -91,7 +101,7 @@ function render() {
   $('#subtitulo').textContent = TITULOS[tab][1];
   $('#main').classList.toggle('ancho', tab === 'vender');
   const caj = db.cajero || 'Cajero';
-  $('#cajero-txt').textContent = 'Cajero: ' + caj;
+  $('#cajero-txt').textContent = db.cajero ? 'Cajero: ' + db.cajero : 'Cajero';
   $('#cajero-ini').textContent = caj.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
   const bajos = db.productos.filter((p) => p.stock <= (p.stockMin || 0)).length;
   $('#badge').textContent = bajos;
@@ -106,12 +116,15 @@ let descuento = 0; // en pesos
 let pagaCon = ''; // con cuánto paga el cliente (efectivo)
 const BILLETES = [1000, 2000, 5000, 10000, 20000];
 let busqueda = '';
+let sel = -1; // producto resaltado con las flechas
+let f1Listo = false; // el primer F1 lleva a "paga con", el segundo cobra
 
 const subtotalCarrito = () => carrito.reduce((a, i) => a + i.precio * i.cant, 0);
 const totalCarrito = () => Math.max(0, subtotalCarrito() - descuento);
 const nroTxt = (n) => '#' + String(n || 0).padStart(5, '0');
 
 function vistaVender() {
+  f1Listo = false;
   const sub = subtotalCarrito();
   const total = totalCarrito();
   const unidades = carrito.reduce((a, i) => a + (i.kg != null ? 1 : i.cant), 0);
@@ -164,7 +177,7 @@ function vistaVender() {
           </div>
           <div class="vuelto-box" id="vuelto">${vueltoHtml(total)}</div>
         </div>` : ''}
-      <button class="btn cobrar bloque" id="btn-cobrar" style="margin-top:12px" ${carrito.length ? '' : 'disabled'}>COBRAR ${plata(total)} 💳</button>
+      <button class="btn cobrar bloque" id="btn-cobrar" style="margin-top:12px" ${carrito.length ? '' : 'disabled'}>COBRAR ${plata(total)} 💳 <span class="kbd">F1</span></button>
     </div>
 
     <div class="tarjeta resumen">
@@ -174,23 +187,53 @@ function vistaVender() {
       ${ultimasVentasHtml()}
       <button class="btn cancelar bloque" id="btn-vaciar" style="margin-top:14px" ${carrito.length ? '' : 'disabled'}>Cancelar venta 🗑</button>
     </div>
+  </div>
+  <div class="atajos">
+    <span><kbd>F1</kbd> Cobrar</span><span><kbd>F2</kbd> Buscar</span><span><kbd>F3</kbd> Medio de pago</span>
+    <span><kbd>F4</kbd> Descuento</span><span><kbd>F8</kbd> Importe libre</span><span><kbd>F9</kbd> Cancelar venta</span>
+    <span><kbd>↑</kbd><kbd>↓</kbd> Elegir</span><span><kbd>Enter</kbd> Agregar</span><span><kbd>3*código</kbd> Cantidad</span>
+    <span><kbd>+</kbd><kbd>−</kbd> Último producto</span><span><kbd>Supr</kbd> Quitar último</span><span><kbd>Esc</kbd> Cerrar / limpiar</span>
   </div>`;
 
   const inp = $('#buscar');
-  inp.addEventListener('input', () => { busqueda = inp.value; $('#prod-lista').innerHTML = prodListaHtml(listaProductosVenta()); });
+  const refrescarLista = () => {
+    $('#prod-lista').innerHTML = prodListaHtml(listaProductosVenta());
+    const el = document.querySelector('#prod-lista .item.sel');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  };
+  inp.addEventListener('input', () => { busqueda = inp.value; sel = -1; refrescarLista(); });
   inp.addEventListener('keydown', (e) => {
+    const lista = listaProductosVenta();
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!lista.length) return;
+      sel = e.key === 'ArrowDown' ? Math.min(lista.length - 1, sel + 1) : Math.max(0, sel - 1);
+      refrescarLista();
+      return;
+    }
+    // Con el buscador vacío: + / − cambian la cantidad del último producto, Supr lo quita
+    if (!inp.value && carrito.length && ['+', '-', 'Delete'].includes(e.key)) {
+      e.preventDefault();
+      const i = carrito[carrito.length - 1];
+      if (e.key === 'Delete') carrito.pop();
+      else if (i.kg != null) return toast('Para productos por peso usá el botón ⚖️ Peso');
+      else { i.cant += e.key === '+' ? 1 : -1; if (i.cant <= 0) carrito.pop(); }
+      ajustarDescuento(); vistaVender();
+      return;
+    }
     if (e.key !== 'Enter') return;
-    const q = inp.value.trim();
+    e.preventDefault();
+    const { cant, q } = separarCantidad(inp.value);
     if (!q) return;
     const exacto = db.productos.find((p) => p.codigo && p.codigo === q);
-    const lista = listaProductosVenta();
-    const p = exacto || (lista.length === 1 ? lista[0] : null);
-    if (p) { busqueda = ''; agregar(p); }
+    const p = exacto || (sel >= 0 ? lista[sel] : null) || (lista.length === 1 ? lista[0] : null);
+    if (p) { busqueda = ''; sel = -1; agregar(p, cant); }
     else if (!lista.length) toast('No se encontró ese producto');
+    else toast('Hay varios: elegí con ↑ ↓ y Enter');
   });
   $('#prod-lista').addEventListener('click', (e) => {
     const b = e.target.closest('[data-prod]');
-    if (b) agregar(db.productos.find((p) => p.id === b.dataset.prod));
+    if (b) { const { cant } = separarCantidad(busqueda); agregar(db.productos.find((p) => p.id === b.dataset.prod), cant); }
   });
   $('#btn-libre').onclick = importeLibre;
   $('#btn-desc').onclick = pedirDescuento;
@@ -213,6 +256,7 @@ function vistaVender() {
   const inpPaga = $('#pagaCon');
   if (inpPaga) {
     inpPaga.addEventListener('input', () => { pagaCon = inpPaga.value; $('#vuelto').innerHTML = vueltoHtml(total); });
+    inpPaga.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); cobrar(); } });
     document.querySelectorAll('[data-billete]').forEach((b) => (b.onclick = () => {
       pagaCon = b.dataset.billete === 'justo' ? String(total) : b.dataset.billete;
       inpPaga.value = pagaCon;
@@ -220,14 +264,45 @@ function vistaVender() {
     }));
   }
 
-  $('#btn-vaciar').onclick = () => {
-    if (carrito.length > 2 && !confirm('¿Cancelar la venta actual?')) return;
-    carrito = []; descuento = 0; medio = 'Efectivo'; vistaVender();
-  };
+  $('#btn-vaciar').onclick = cancelarVenta;
   $('#btn-cobrar').onclick = cobrar;
   document.querySelectorAll('[data-venta]').forEach((b) => b.addEventListener('click', () => verVenta(b.dataset.venta)));
 
-  if (!('ontouchstart' in window)) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  if (!esTactil()) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+
+function cancelarVenta() {
+  if (!carrito.length) return toast('No hay ninguna venta en curso');
+  const unidades = carrito.reduce((a, i) => a + (i.kg != null ? 1 : i.cant), 0);
+  abrirModal(`
+    <div style="text-align:center">
+      <div style="font-size:2.6rem">⚠️</div>
+      <h2>¿Cancelar la venta?</h2>
+      <div class="sub" style="font-size:.95rem">Se van a borrar <b>${unidades} producto${unidades === 1 ? '' : 's'}</b> por <b>${plata(totalCarrito())}</b>.<br>Esto no se puede deshacer.</div>
+    </div>
+    <div class="modal-botones">
+      <button class="btn primario" id="cv-no">No, volver <span class="kbd">Enter</span></button>
+      <button class="btn cancelar" id="cv-si">Sí, cancelar <span class="kbd">S</span></button>
+    </div>`);
+  const si = () => {
+    document.removeEventListener('keydown', teclaS, true);
+    carrito = []; descuento = 0; medio = 'Efectivo'; pagaCon = ''; busqueda = ''; sel = -1;
+    cerrarModal(); vistaVender(); toast('Venta cancelada');
+  };
+  const no = () => { document.removeEventListener('keydown', teclaS, true); cerrarModal(); };
+  const teclaS = (e) => {
+    if ($('#modal').classList.contains('oculto')) return document.removeEventListener('keydown', teclaS, true);
+    if (e.key === 's' || e.key === 'S') { e.preventDefault(); si(); }
+  };
+  document.addEventListener('keydown', teclaS, true);
+  $('#cv-si').onclick = si;
+  $('#cv-no').onclick = no;
+  $('#cv-no').focus();
+}
+// "3*coca" o "3*7790..." → 3 unidades
+function separarCantidad(texto) {
+  const m = String(texto).trim().match(/^(\d+)\s*[*xX]\s*(.+)$/);
+  return m ? { cant: Math.max(1, parseInt(m[1], 10)), q: m[2].trim() } : { cant: 1, q: String(texto).trim() };
 }
 
 function vueltoHtml(total) {
@@ -238,7 +313,7 @@ function vueltoHtml(total) {
     : `<span class="rojo">Falta</span><b class="rojo">${plata(-v)}</b>`;
 }
 function listaProductosVenta() {
-  const q = busqueda.trim().toLowerCase();
+  const q = separarCantidad(busqueda).q.toLowerCase();
   return db.productos
     .filter((p) => !q || p.nombre.toLowerCase().includes(q) || (p.codigo || '').includes(q))
     .sort((a, b) => a.nombre.localeCompare(b.nombre))
@@ -247,8 +322,8 @@ function listaProductosVenta() {
 function prodListaHtml(prods) {
   if (!db.productos.length) return '<div class="vacio">No hay productos. Cargalos en <b>Productos</b> o en <b>Más → ejemplo</b>.</div>';
   if (!prods.length) return '<div class="vacio">Sin resultados</div>';
-  return prods.map((p) => `
-    <div class="item">
+  return prods.map((p, n) => `
+    <div class="item ${n === sel ? 'sel' : ''}">
       <div class="info" style="min-width:0">
         <div class="nombre" style="font-weight:600">${esc(p.nombre)}</div>
         <div class="sub">${p.porPeso ? '⚖️ ' : ''}${precioTxt(p)}${p.codigo ? ' · Cód. ' + esc(p.codigo) : ''} · Stock: <span class="${p.stock <= (p.stockMin || 0) ? 'rojo' : ''}">${stockTxt(p)}</span></div>
@@ -256,12 +331,12 @@ function prodListaHtml(prods) {
       <button class="btn agregar" data-prod="${p.id}">+ Agregar</button>
     </div>`).join('');
 }
-function agregar(p) {
+function agregar(p, cant = 1) {
   if (!p) return;
   if (p.porPeso) return pedirPeso(p);
   const ya = carrito.find((i) => i.id === p.id);
-  if (ya) ya.cant++;
-  else carrito.push({ id: p.id, nombre: p.nombre, precio: p.precio, costo: p.costo || 0, cant: 1 });
+  if (ya) ya.cant += cant;
+  else carrito.push({ id: p.id, nombre: p.nombre, precio: p.precio, costo: p.costo || 0, cant });
   if (p.stock <= 0) toast(`Ojo: ${p.nombre} figura sin stock`);
   else toast(`${p.nombre} agregado`);
   vistaVender();
@@ -304,7 +379,7 @@ function pedirPeso(p, idxEditar = null) {
     $('#w-valor').value = ''; rapidos(); mostrar(); $('#w-valor').focus();
   }));
   $('#w-valor').oninput = mostrar;
-  $('#w-valor').onkeydown = (e) => { if (e.key === 'Enter') $('#w-ok').click(); };
+  $('#w-valor').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#w-ok').click(); } };
   rapidos(); mostrar(); $('#w-valor').focus();
   $('#w-ok').onclick = () => {
     const r = calc();
@@ -324,6 +399,7 @@ function pedirDescuento() {
     <label>Porcentaje</label><input id="d-pct" inputmode="decimal" placeholder="Ej: 10">
     <label>…o monto en pesos</label><input id="d-monto" inputmode="decimal" value="${descuento || ''}" placeholder="0">
     <div class="modal-botones"><button class="btn gris" id="d-quitar">Sin descuento</button><button class="btn primario" id="d-ok">Aplicar</button></div>`);
+  $('#d-pct').focus();
   $('#d-pct').oninput = (e) => { $('#d-monto').value = Math.round(subtotalCarrito() * num(e.target.value) / 100) || ''; };
   $('#d-quitar').onclick = () => { descuento = 0; cerrarModal(); vistaVender(); };
   $('#d-ok').onclick = () => { descuento = Math.max(0, num($('#d-monto').value)); ajustarDescuento(); cerrarModal(); vistaVender(); };
@@ -834,6 +910,56 @@ $('#esc-manual').addEventListener('click', () => {
   cerrarEscaner();
   if (cb) cb(c.trim());
 });
+
+// ================= ATAJOS DE TECLADO =================
+const TABS_ORDEN = ['vender', 'productos', 'caja', 'mas'];
+document.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented) return;
+  const modalAbierto = !$('#modal').classList.contains('oculto');
+  const escanerAbierto = !$('#escaner').classList.contains('oculto');
+
+  if (escanerAbierto) { if (e.key === 'Escape') cerrarEscaner(); return; }
+
+  if (modalAbierto) {
+    if (e.key === 'Escape') { e.preventDefault(); cerrarModal(); }
+    else if (e.key === 'Enter' && !['TEXTAREA', 'SELECT', 'BUTTON'].includes(document.activeElement.tagName)) {
+      const b = document.querySelector('#modal .modal-botones .btn.primario, #modal .modal-botones .btn.cobrar');
+      if (b) { e.preventDefault(); b.click(); }
+    }
+    if (/^F\d+$/.test(e.key)) e.preventDefault();
+    return;
+  }
+
+  if (e.altKey && /^[1-4]$/.test(e.key)) { e.preventDefault(); irA(TABS_ORDEN[+e.key - 1]); return; }
+
+  const teclas = ['F1', 'F2', 'F3', 'F4', 'F8', 'F9'];
+  if (teclas.includes(e.key)) {
+    e.preventDefault();
+    if (tab !== 'vender') irA('vender');
+    if (e.key === 'F1') {
+      if (!carrito.length) return toast('No hay productos en la venta');
+      const paga = $('#pagaCon');
+      if (medio === 'Efectivo' && paga && !String(pagaCon).trim() && !f1Listo) { f1Listo = true; paga.focus(); paga.select(); return; }
+      cobrar();
+    } else if (e.key === 'F2') { const b = $('#buscar'); b.focus(); b.select(); }
+    else if (e.key === 'F3') {
+      medio = MEDIOS[(MEDIOS.indexOf(medio) + 1) % MEDIOS.length];
+      vistaVender(); toast('Medio de pago: ' + medio);
+    }
+    else if (e.key === 'F4') pedirDescuento();
+    else if (e.key === 'F8') importeLibre();
+    else if (e.key === 'F9') cancelarVenta();
+    return;
+  }
+
+  if (e.key === 'Escape' && tab === 'vender') {
+    const b = $('#buscar');
+    if (b && (b.value || busqueda)) { busqueda = ''; sel = -1; vistaVender(); }
+    else if (b) b.focus();
+  }
+});
+// En PC, la ayuda de F1 del navegador no debe abrirse
+window.addEventListener('help', (e) => e.preventDefault());
 
 // ---------- Arranque ----------
 window.cerrarModal = cerrarModal;
