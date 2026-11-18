@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#2563eb">
+  <meta name="theme-color" content="#13233f">
   <title>Kiosco POS</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=10">
+  <link rel="stylesheet" href="styles.css?v=11">
 </head>
 <body>
   <header class="topbar">
@@ -17,6 +17,7 @@
       <h1 id="negocio">Mi Kiosco</h1>
     </div>
     <div class="top-der">
+      <span class="reloj" id="reloj"></span>
       <button class="campana" id="campana" title="Productos para reponer">🔔<span class="badge oculto" id="badge"></span></button>
       <div class="cajero"><span class="txt" id="cajero-txt"></span><span class="avatar" id="cajero-ini"></span></div>
     </div>
@@ -28,10 +29,11 @@
   </main>
 
   <nav class="tabs">
-    <button data-tab="vender" class="activo"><span>🛒</span>Vender</button>
-    <button data-tab="productos"><span>📦</span>Productos</button>
-    <button data-tab="caja"><span>💵</span>Caja</button>
-    <button data-tab="mas"><span>📊</span>Más</button>
+    <div class="nav-marca"><b>KIOSCO</b><small>Punto de venta · Local</small></div>
+    <button data-tab="vender" class="activo"><span>🛒</span><i>Vender</i><kbd>Alt+1</kbd></button>
+    <button data-tab="productos"><span>📦</span><i>Productos</i><kbd>Alt+2</kbd></button>
+    <button data-tab="caja"><span>💵</span><i>Caja</i><kbd>Alt+3</kbd></button>
+    <button data-tab="mas"><span>📊</span><i>Reportes</i><kbd>Alt+4</kbd></button>
   </nav>
 
   <div id="modal" class="modal oculto"><div class="modal-caja" id="modal-contenido"></div></div>
@@ -48,6 +50,6 @@
   </div>
   <div id="toast" class="toast oculto"></div>
 
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

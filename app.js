@@ -2,7 +2,7 @@
    Todo se guarda en el navegador (localStorage). Sin servidor. */
 
 const CLAVE = 'kiosco_pos_v1';
-const VERSION = '1.9 · lector láser';
+const VERSION = '2.0 · paleta caja';
 let pedidoInstalar = null;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); pedidoInstalar = e; if (tab === 'mas') render(); });
 window.addEventListener('appinstalled', () => { pedidoInstalar = null; toast('¡App instalada!'); });
@@ -141,7 +141,7 @@ function vistaVender() {
       <div class="lector">
         <div class="lector-tit"><span>📟 Lector de código de barras</span><span class="lector-estado"></span></div>
         <div class="fila">
-          <input id="escanear" placeholder="Escaneá o escribí el código y Enter" autocomplete="off" enterkeyhint="go" inputmode="numeric">
+          <input id="escanear" placeholder="Escaneá o escribí el código" autocomplete="off" enterkeyhint="go" inputmode="numeric">
           <button class="btn primario fijo" id="btn-scan" title="Escanear con la cámara del celular">📷</button>
         </div>
       </div>
@@ -1002,6 +1002,13 @@ document.addEventListener('click', (e) => {
 });
 // En PC, la ayuda de F1 del navegador no debe abrirse
 window.addEventListener('help', (e) => e.preventDefault());
+
+function actualizarReloj() {
+  const d = new Date();
+  $('#reloj').textContent = d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' · ' + d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+}
+actualizarReloj();
+setInterval(actualizarReloj, 20000);
 
 // ---------- Arranque ----------
 window.cerrarModal = cerrarModal;

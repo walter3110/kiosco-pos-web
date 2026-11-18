@@ -1,9 +1,9 @@
 // Service worker: permite instalar la app y usarla SIN INTERNET.
 // Estrategia: primero intenta la red (para tener siempre la última versión);
 // si no hay conexión, usa la copia guardada.
-const CACHE = 'kiosco-pos-v10';
+const CACHE = 'kiosco-pos-v11';
 const ARCHIVOS = [
-  './', 'index.html', 'styles.css?v=10', 'app.js?v=10',
+  './', 'index.html', 'styles.css?v=11', 'app.js?v=11',
   'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png',
 ];
 
