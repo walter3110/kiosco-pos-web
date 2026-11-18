@@ -2,7 +2,10 @@
    Todo se guarda en el navegador (localStorage). Sin servidor. */
 
 const CLAVE = 'kiosco_pos_v1';
-const VERSION = '1.5 · por peso';
+const VERSION = '1.6 · instalable';
+let pedidoInstalar = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); pedidoInstalar = e; if (tab === 'mas') render(); });
+window.addEventListener('appinstalled', () => { pedidoInstalar = null; toast('¡App instalada!'); });
 const MEDIOS = ['Efectivo', 'Débito', 'Crédito', 'Transferencia', 'Mercado Pago'];
 
 // ---------- Datos ----------
@@ -689,6 +692,7 @@ function vistaMas() {
       </div>
       <input type="file" id="archivo" accept=".json,application/json" class="oculto">
       <button class="btn bloque" id="demo" style="margin-top:8px">Cargar productos de ejemplo</button>
+      ${pedidoInstalar ? '<button class="btn primario bloque" id="instalar" style="margin-top:8px">💻 Instalar como app (funciona sin internet)</button>' : ''}
       <div class="sub" style="margin-top:8px">Los datos se guardan solo en este dispositivo. Hacé una copia de seguridad seguido.</div>
       <div class="sub" style="margin-top:8px">Versión ${VERSION}</div>
     </div>`;
@@ -700,6 +704,8 @@ function vistaMas() {
   $('#imp').onclick = () => $('#archivo').click();
   $('#archivo').onchange = importar;
   $('#demo').onclick = cargarDemo;
+  const bi = $('#instalar');
+  if (bi) bi.onclick = async () => { pedidoInstalar.prompt(); await pedidoInstalar.userChoice; pedidoInstalar = null; render(); };
 }
 
 function exportar() {
