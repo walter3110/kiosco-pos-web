@@ -2,7 +2,7 @@
    Todo se guarda en el navegador (localStorage). Sin servidor. */
 
 const CLAVE = 'kiosco_pos_v1';
-const VERSION = '1.8 · atajos visibles';
+const VERSION = '1.9 · lector láser';
 let pedidoInstalar = null;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); pedidoInstalar = e; if (tab === 'mas') render(); });
 window.addEventListener('appinstalled', () => { pedidoInstalar = null; toast('¡App instalada!'); });
@@ -73,7 +73,7 @@ function abrirModal(html) {
 }
 function cerrarModal() {
   $('#modal').classList.add('oculto');
-  if (tab === 'vender' && !esTactil()) { const b = $('#buscar'); if (b) b.focus(); }
+  if (tab === 'vender' && !esTactil()) { const b = $('#escanear'); if (b) b.focus(); }
 }
 $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') cerrarModal(); });
 
@@ -120,7 +120,7 @@ let sel = -1; // producto resaltado con las flechas
 let f1Listo = false; // el primer F1 lleva a "paga con", el segundo cobra
 
 const subtotalCarrito = () => carrito.reduce((a, i) => a + i.precio * i.cant, 0);
-const totalCarrito = () => Math.max(0, subtotalCarrito() - descuento);
+const totalCarrito = () => subtotalCarrito();
 const nroTxt = (n) => '#' + String(n || 0).padStart(5, '0');
 
 function vistaVender() {
@@ -132,17 +132,21 @@ function vistaVender() {
 
   $('#app').innerHTML = `
   <div class="atajos">
-    ${[['F1', 'Cobrar'], ['F2', 'Buscar'], ['F3', 'Medio de pago'], ['F4', 'Descuento'], ['F8', 'Importe libre'], ['F9', 'Cancelar venta']]
+    ${[['F1', 'Cobrar'], ['F2', 'Buscar por nombre'], ['F3', 'Medio de pago'], ['F8', 'Importe libre'], ['F9', 'Cancelar venta']]
       .map(([k, t]) => `<button class="atajo" data-tecla="${k}"><kbd>${k}</kbd>${t}</button>`).join('')}
-    <span class="atajo-extra"><kbd>↑↓</kbd> elegir · <kbd>3*cód</kbd> cantidad · <kbd>+</kbd><kbd>−</kbd> último · <kbd>Supr</kbd> quitar · <kbd>Esc</kbd> cerrar</span>
+    <span class="atajo-extra"><kbd>3*</kbd> + escanear = cantidad · <kbd>+</kbd><kbd>−</kbd> último · <kbd>Supr</kbd> quitar último · <kbd>Esc</kbd> volver al lector</span>
   </div>
   <div class="venta-grid">
     <div class="tarjeta">
-      <div class="fila">
-        <input id="buscar" placeholder="🔍  Buscar por nombre o código…  (F2)" autocomplete="off" enterkeyhint="search" value="${esc(busqueda)}">
-        <button class="btn primario fijo" id="btn-scan" title="Escanear con la cámara">📷</button>
+      <div class="lector">
+        <div class="lector-tit"><span>📟 Lector de código de barras</span><span class="lector-estado"></span></div>
+        <div class="fila">
+          <input id="escanear" placeholder="Escaneá o escribí el código y Enter" autocomplete="off" enterkeyhint="go" inputmode="numeric">
+          <button class="btn primario fijo" id="btn-scan" title="Escanear con la cámara del celular">📷</button>
+        </div>
       </div>
-      <div class="prod-lista" id="prod-lista">${prodListaHtml(prods)}</div>
+      <input id="buscar" style="margin-top:10px" placeholder="🔍  Buscar por nombre…  (F2)" autocomplete="off" enterkeyhint="search" value="${esc(busqueda)}">
+      <div class="prod-lista ${!busqueda && !esTactil() ? 'oculto' : ''}" id="prod-lista">${prodListaHtml(prods)}</div>
       <button class="linkbtn" id="btn-libre" style="margin-top:8px">+ Importe libre (fiambre, verdura, varios) <span class="kbd">F8</span></button>
 
       <div class="ticket">
@@ -163,8 +167,7 @@ function vistaVender() {
             </li>`).join('')}
         </ul>`}
         <div class="subtotales">
-          <span>Subtotal: ${plata(sub)}</span>
-          <span>Descuento <span class="kbd">F4</span>: <button class="linkbtn" id="btn-desc">${plata(descuento)}</button></span>
+          <span>${unidades} producto${unidades === 1 ? '' : 's'}</span>
           <span class="tot">Total: ${plata(total)}</span>
         </div>
       </div>
@@ -196,8 +199,26 @@ function vistaVender() {
   </div>
   `;
 
+  const lector = $('#escanear');
+  lector.addEventListener('keydown', (e) => {
+    // Con el lector vacío: + / − cambian la cantidad del último producto, Supr lo quita
+    if (!lector.value && carrito.length && ['+', '-', 'Delete'].includes(e.key)) {
+      e.preventDefault(); modificarUltimo(e.key); return;
+    }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const { cant, q } = separarCantidad(lector.value);
+    if (!q) return;
+    const p = db.productos.find((x) => x.codigo && x.codigo === q);
+    if (p) { lector.value = ''; agregar(p, cant); return; }
+    if (/[a-záéíóúñ]/i.test(q)) { busqueda = lector.value; lector.value = ''; vistaVender(); $('#buscar').focus(); return; }
+    lector.value = '';
+    codigoNoEncontrado(q);
+  });
+
   const inp = $('#buscar');
   const refrescarLista = () => {
+    $('#prod-lista').classList.toggle('oculto', !busqueda && !esTactil());
     $('#prod-lista').innerHTML = prodListaHtml(listaProductosVenta());
     const el = document.querySelector('#prod-lista .item.sel');
     if (el) el.scrollIntoView({ block: 'nearest' });
@@ -212,16 +233,6 @@ function vistaVender() {
       refrescarLista();
       return;
     }
-    // Con el buscador vacío: + / − cambian la cantidad del último producto, Supr lo quita
-    if (!inp.value && carrito.length && ['+', '-', 'Delete'].includes(e.key)) {
-      e.preventDefault();
-      const i = carrito[carrito.length - 1];
-      if (e.key === 'Delete') carrito.pop();
-      else if (i.kg != null) return toast('Para productos por peso usá el botón ⚖️ Peso');
-      else { i.cant += e.key === '+' ? 1 : -1; if (i.cant <= 0) carrito.pop(); }
-      ajustarDescuento(); vistaVender();
-      return;
-    }
     if (e.key !== 'Enter') return;
     e.preventDefault();
     const { cant, q } = separarCantidad(inp.value);
@@ -234,23 +245,22 @@ function vistaVender() {
   });
   $('#prod-lista').addEventListener('click', (e) => {
     const b = e.target.closest('[data-prod]');
-    if (b) { const { cant } = separarCantidad(busqueda); agregar(db.productos.find((p) => p.id === b.dataset.prod), cant); }
+    if (b) { const { cant } = separarCantidad(busqueda); busqueda = ''; sel = -1; agregar(db.productos.find((p) => p.id === b.dataset.prod), cant); }
   });
   $('#btn-libre').onclick = importeLibre;
-  $('#btn-desc').onclick = pedirDescuento;
 
   document.querySelectorAll('[data-mas]').forEach((b) => (b.onclick = () => { carrito[b.dataset.mas].cant++; vistaVender(); }));
   document.querySelectorAll('[data-menos]').forEach((b) => (b.onclick = () => {
     const i = carrito[b.dataset.menos];
     i.cant--;
     if (i.cant <= 0) carrito.splice(b.dataset.menos, 1);
-    ajustarDescuento(); vistaVender();
+    vistaVender();
   }));
   document.querySelectorAll('[data-peso]').forEach((b) => (b.onclick = () => {
     const i = carrito[b.dataset.peso];
     pedirPeso(db.productos.find((p) => p.id === i.id) || { id: i.id, nombre: i.nombre, precio: i.precioKg, costo: 0, porPeso: true }, +b.dataset.peso);
   }));
-  document.querySelectorAll('[data-quitar]').forEach((b) => (b.onclick = () => { carrito.splice(b.dataset.quitar, 1); ajustarDescuento(); vistaVender(); }));
+  document.querySelectorAll('[data-quitar]').forEach((b) => (b.onclick = () => { carrito.splice(b.dataset.quitar, 1); vistaVender(); }));
   document.querySelectorAll('[data-medio]').forEach((b) => (b.onclick = () => { medio = b.dataset.medio; vistaVender(); }));
   $('#btn-scan').onclick = () => escanear(venderPorCodigo);
   document.querySelectorAll('[data-tecla]').forEach((b) => (b.onclick = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: b.dataset.tecla, bubbles: true }))));
@@ -270,7 +280,35 @@ function vistaVender() {
   $('#btn-cobrar').onclick = cobrar;
   document.querySelectorAll('[data-venta]').forEach((b) => b.addEventListener('click', () => verVenta(b.dataset.venta)));
 
-  if (!esTactil()) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  if (!esTactil()) {
+    if (busqueda) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+    else lector.focus();
+  }
+}
+
+function modificarUltimo(tecla) {
+  const i = carrito[carrito.length - 1];
+  if (!i) return;
+  if (tecla === 'Delete') carrito.pop();
+  else if (i.kg != null) return toast('Para productos por peso usá el botón ⚖️ Peso');
+  else { i.cant += tecla === '+' ? 1 : -1; if (i.cant <= 0) carrito.pop(); }
+  vistaVender();
+}
+function codigoNoEncontrado(codigo) {
+  if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+  abrirModal(`
+    <div style="text-align:center">
+      <div style="font-size:2.4rem">❓</div>
+      <h2>Código no encontrado</h2>
+      <div class="sub" style="font-size:1rem">El código <b>${esc(codigo)}</b> no está cargado.</div>
+    </div>
+    <div class="modal-botones">
+      <button class="btn" id="cn-crear">Crear producto</button>
+      <button class="btn primario" id="cn-ok">Seguir vendiendo <span class="kbd">Enter</span></button>
+    </div>`);
+  $('#cn-ok').onclick = cerrarModal;
+  $('#cn-crear').onclick = () => editarProducto(null, codigo);
+  $('#cn-ok').focus();
 }
 
 function cancelarVenta() {
@@ -389,27 +427,12 @@ function pedirPeso(p, idxEditar = null) {
     const item = { id: p.id, nombre: p.nombre, porPeso: true, kg: r.kg, precioKg: p.precio, precio: r.precio, costo: Math.round(r.kg * (p.costo || 0)), cant: 1 };
     if (actual) carrito[idxEditar] = item; else carrito.push(item);
     if (p.stock != null && p.stock < r.kg) toast(`Ojo: ${p.nombre} figura con poco stock`);
-    cerrarModal(); ajustarDescuento(); vistaVender();
+    cerrarModal(); vistaVender();
   };
-}
-function ajustarDescuento() { descuento = Math.min(descuento, subtotalCarrito()); }
-function pedirDescuento() {
-  if (!carrito.length) return toast('Primero agregá productos');
-  abrirModal(`
-    <h2>Descuento</h2>
-    <div class="sub">Subtotal: ${plata(subtotalCarrito())}</div>
-    <label>Porcentaje</label><input id="d-pct" inputmode="decimal" placeholder="Ej: 10">
-    <label>…o monto en pesos</label><input id="d-monto" inputmode="decimal" value="${descuento || ''}" placeholder="0">
-    <div class="modal-botones"><button class="btn gris" id="d-quitar">Sin descuento</button><button class="btn primario" id="d-ok">Aplicar</button></div>`);
-  $('#d-pct').focus();
-  $('#d-pct').oninput = (e) => { $('#d-monto').value = Math.round(subtotalCarrito() * num(e.target.value) / 100) || ''; };
-  $('#d-quitar').onclick = () => { descuento = 0; cerrarModal(); vistaVender(); };
-  $('#d-ok').onclick = () => { descuento = Math.max(0, num($('#d-monto').value)); ajustarDescuento(); cerrarModal(); vistaVender(); };
 }
 function venderPorCodigo(codigo) {
   const p = db.productos.find((x) => x.codigo === codigo);
-  if (p) { agregar(p); return; }
-  if (confirm(`El código ${codigo} no está cargado. ¿Querés crear el producto?`)) editarProducto(null, codigo);
+  if (p) agregar(p); else codigoNoEncontrado(codigo);
 }
 function importeLibre() {
   abrirModal(`
@@ -934,7 +957,7 @@ document.addEventListener('keydown', (e) => {
 
   if (e.altKey && /^[1-4]$/.test(e.key)) { e.preventDefault(); irA(TABS_ORDEN[+e.key - 1]); return; }
 
-  const teclas = ['F1', 'F2', 'F3', 'F4', 'F8', 'F9'];
+  const teclas = ['F1', 'F2', 'F3', 'F8', 'F9'];
   if (teclas.includes(e.key)) {
     e.preventDefault();
     if (tab !== 'vender') irA('vender');
@@ -948,17 +971,34 @@ document.addEventListener('keydown', (e) => {
       medio = MEDIOS[(MEDIOS.indexOf(medio) + 1) % MEDIOS.length];
       vistaVender(); toast('Medio de pago: ' + medio);
     }
-    else if (e.key === 'F4') pedirDescuento();
     else if (e.key === 'F8') importeLibre();
     else if (e.key === 'F9') cancelarVenta();
     return;
   }
 
-  if (e.key === 'Escape' && tab === 'vender') {
-    const b = $('#buscar');
-    if (b && (b.value || busqueda)) { busqueda = ''; sel = -1; vistaVender(); }
-    else if (b) b.focus();
+  if (tab !== 'vender') return;
+  if (e.key === 'Escape') {
+    if (busqueda || ($('#buscar') && $('#buscar').value)) { busqueda = ''; sel = -1; vistaVender(); }
+    const l = $('#escanear'); if (l) l.focus();
+    return;
   }
+  // Prioridad al lector láser: si el cursor no está en ningún campo, lo que se tipee/escanee va al lector
+  const enCampo = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+  if (!enCampo && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key.length === 1 || e.key === 'Enter')) {
+    const l = $('#escanear');
+    if (l && e.key !== 'Enter') l.focus();
+    else if (l && e.key === 'Enter' && l.value) { e.preventDefault(); l.focus(); l.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); }
+  }
+});
+document.addEventListener('click', (e) => {
+  if (tab !== 'vender' || esTactil() || !$('#modal').classList.contains('oculto')) return;
+  if (e.target.closest('input, select, textarea, label')) return;
+  setTimeout(() => {
+    const a = document.activeElement;
+    if (a && ['INPUT', 'TEXTAREA', 'SELECT'].includes(a.tagName)) return;
+    if (!$('#modal').classList.contains('oculto')) return;
+    const l = $('#escanear'); if (l) l.focus();
+  }, 0);
 });
 // En PC, la ayuda de F1 del navegador no debe abrirse
 window.addEventListener('help', (e) => e.preventDefault());

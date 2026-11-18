@@ -269,3 +269,11 @@ kbd, .kbd {
   .modal { align-items: center; }
   .modal-caja { border-radius: 16px; max-width: 520px; }
 }
+
+/* ---- Lector láser ---- */
+.lector { background: var(--azul-claro); border-radius: 12px; padding: 10px; }
+.lector-tit { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: .9rem; color: var(--azul); margin-bottom: 6px; }
+.lector input { font-size: 1.25rem; font-weight: 700; letter-spacing: .5px; border: 2px solid var(--borde); }
+.lector input:focus { outline: none; border-color: var(--verde); box-shadow: 0 0 0 3px rgba(22,163,74,.18); }
+.lector-estado::after { content: '● Hacé clic acá para escanear'; color: var(--rojo); font-size: .8rem; }
+.lector:focus-within .lector-estado::after { content: '● Listo para escanear'; color: var(--verde); }
