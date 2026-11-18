@@ -2,7 +2,7 @@
    Todo se guarda en el navegador (localStorage). Sin servidor. */
 
 const CLAVE = 'kiosco_pos_v1';
-const VERSION = '1.7 · atajos';
+const VERSION = '1.8 · atajos visibles';
 let pedidoInstalar = null;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); pedidoInstalar = e; if (tab === 'mas') render(); });
 window.addEventListener('appinstalled', () => { pedidoInstalar = null; toast('¡App instalada!'); });
@@ -131,14 +131,19 @@ function vistaVender() {
   const prods = listaProductosVenta();
 
   $('#app').innerHTML = `
+  <div class="atajos">
+    ${[['F1', 'Cobrar'], ['F2', 'Buscar'], ['F3', 'Medio de pago'], ['F4', 'Descuento'], ['F8', 'Importe libre'], ['F9', 'Cancelar venta']]
+      .map(([k, t]) => `<button class="atajo" data-tecla="${k}"><kbd>${k}</kbd>${t}</button>`).join('')}
+    <span class="atajo-extra"><kbd>↑↓</kbd> elegir · <kbd>3*cód</kbd> cantidad · <kbd>+</kbd><kbd>−</kbd> último · <kbd>Supr</kbd> quitar · <kbd>Esc</kbd> cerrar</span>
+  </div>
   <div class="venta-grid">
     <div class="tarjeta">
       <div class="fila">
-        <input id="buscar" placeholder="🔍  Buscar por nombre o código…" autocomplete="off" enterkeyhint="search" value="${esc(busqueda)}">
+        <input id="buscar" placeholder="🔍  Buscar por nombre o código…  (F2)" autocomplete="off" enterkeyhint="search" value="${esc(busqueda)}">
         <button class="btn primario fijo" id="btn-scan" title="Escanear con la cámara">📷</button>
       </div>
       <div class="prod-lista" id="prod-lista">${prodListaHtml(prods)}</div>
-      <button class="linkbtn" id="btn-libre" style="margin-top:8px">+ Importe libre (fiambre, verdura, varios)</button>
+      <button class="linkbtn" id="btn-libre" style="margin-top:8px">+ Importe libre (fiambre, verdura, varios) <span class="kbd">F8</span></button>
 
       <div class="ticket">
         ${carrito.length === 0 ? '<div class="vacio">Todavía no agregaste productos</div>' : `
@@ -159,12 +164,13 @@ function vistaVender() {
         </ul>`}
         <div class="subtotales">
           <span>Subtotal: ${plata(sub)}</span>
-          <span>Descuento: <button class="linkbtn" id="btn-desc">${plata(descuento)}</button></span>
+          <span>Descuento <span class="kbd">F4</span>: <button class="linkbtn" id="btn-desc">${plata(descuento)}</button></span>
           <span class="tot">Total: ${plata(total)}</span>
         </div>
       </div>
 
-      <div class="pagos" style="margin-top:12px">
+      <div class="sub" style="margin-top:12px;margin-bottom:6px">Medio de pago <span class="kbd">F3</span></div>
+      <div class="pagos">
         ${MEDIOS.map((m) => `<button data-medio="${m}" class="${m === medio ? 'activo' : ''}">${m}</button>`).join('')}
       </div>
       ${medio === 'Efectivo' ? `
@@ -185,15 +191,10 @@ function vistaVender() {
       <div class="dato"><span class="sub">Productos:</span><b>${unidades}</b></div>
       <div class="dato"><span class="sub">Pago:</span><b>${esc(medio)}</b></div>
       ${ultimasVentasHtml()}
-      <button class="btn cancelar bloque" id="btn-vaciar" style="margin-top:14px" ${carrito.length ? '' : 'disabled'}>Cancelar venta 🗑</button>
+      <button class="btn cancelar bloque" id="btn-vaciar" style="margin-top:14px" ${carrito.length ? '' : 'disabled'}>Cancelar venta 🗑 <span class="kbd">F9</span></button>
     </div>
   </div>
-  <div class="atajos">
-    <span><kbd>F1</kbd> Cobrar</span><span><kbd>F2</kbd> Buscar</span><span><kbd>F3</kbd> Medio de pago</span>
-    <span><kbd>F4</kbd> Descuento</span><span><kbd>F8</kbd> Importe libre</span><span><kbd>F9</kbd> Cancelar venta</span>
-    <span><kbd>↑</kbd><kbd>↓</kbd> Elegir</span><span><kbd>Enter</kbd> Agregar</span><span><kbd>3*código</kbd> Cantidad</span>
-    <span><kbd>+</kbd><kbd>−</kbd> Último producto</span><span><kbd>Supr</kbd> Quitar último</span><span><kbd>Esc</kbd> Cerrar / limpiar</span>
-  </div>`;
+  `;
 
   const inp = $('#buscar');
   const refrescarLista = () => {
@@ -252,6 +253,7 @@ function vistaVender() {
   document.querySelectorAll('[data-quitar]').forEach((b) => (b.onclick = () => { carrito.splice(b.dataset.quitar, 1); ajustarDescuento(); vistaVender(); }));
   document.querySelectorAll('[data-medio]').forEach((b) => (b.onclick = () => { medio = b.dataset.medio; vistaVender(); }));
   $('#btn-scan').onclick = () => escanear(venderPorCodigo);
+  document.querySelectorAll('[data-tecla]').forEach((b) => (b.onclick = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: b.dataset.tecla, bubbles: true }))));
 
   const inpPaga = $('#pagaCon');
   if (inpPaga) {
