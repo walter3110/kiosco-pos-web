@@ -7,6 +7,8 @@ const MEDIOS = ['Efectivo', 'Débito', 'Crédito', 'Transferencia', 'Mercado Pag
 // ---------- Datos ----------
 const datosIniciales = () => ({
   negocio: 'Mi Kiosco',
+  cajero: '',
+  ultimoNro: 0,
   productos: [],
   ventas: [],
   clientes: [],
@@ -58,140 +60,182 @@ function cerrarModal() { $('#modal').classList.add('oculto'); }
 $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') cerrarModal(); });
 
 const saldoCliente = (id) => {
-  const fiado = db.ventas.filter((v) => v.clienteId === id && !v.anulada).reduce((a, v) => a + v.total, 0);
+  const fiado = db.ventas.filter((v) => v.clienteId === id && v.medio === 'Fiado' && !v.anulada).reduce((a, v) => a + v.total, 0);
   const pagado = db.pagosFiado.filter((p) => p.clienteId === id).reduce((a, p) => a + p.monto, 0);
   return fiado - pagado;
 };
 
 // ---------- Navegación ----------
-const TITULOS = { vender: 'Vender', productos: 'Productos', fiado: 'Fiado', caja: 'Caja del día', mas: 'Reportes y ajustes' };
+const TITULOS = {
+  vender: ['Venta actual', 'Agregar productos a la venta'],
+  productos: ['Productos', 'Precios, stock y categorías'],
+  fiado: ['Fiado', 'Cuentas corrientes de clientes'],
+  caja: ['Caja del día', 'Ventas, medios de pago y cierre'],
+  mas: ['Reportes y ajustes', 'Cómo viene el negocio'],
+};
 let tab = 'vender';
+$('#campana').addEventListener('click', () => { soloBajo = true; filtroProd = ''; irA('productos'); });
 document.querySelectorAll('.tabs button').forEach((b) =>
   b.addEventListener('click', () => irA(b.dataset.tab))
 );
 function irA(t) {
   tab = t;
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('activo', b.dataset.tab === t));
-  $('#titulo').textContent = TITULOS[t];
   render();
   window.scrollTo(0, 0);
 }
 function render() {
   $('#negocio').textContent = db.negocio;
+  $('#titulo').textContent = TITULOS[tab][0];
+  $('#subtitulo').textContent = TITULOS[tab][1];
+  $('#main').classList.toggle('ancho', tab === 'vender');
+  const caj = db.cajero || 'Cajero';
+  $('#cajero-txt').textContent = 'Cajero: ' + caj;
+  $('#cajero-ini').textContent = caj.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+  const bajos = db.productos.filter((p) => p.stock <= (p.stockMin || 0)).length;
+  $('#badge').textContent = bajos;
+  $('#badge').classList.toggle('oculto', !bajos);
   ({ vender: vistaVender, productos: vistaProductos, fiado: vistaFiado, caja: vistaCaja, mas: vistaMas })[tab]();
 }
 
 // ================= VENDER =================
-let carrito = []; // { id, nombre, precio, cant }
+let carrito = []; // { id, nombre, precio, costo, cant }
 let medio = 'Efectivo';
 let clienteVenta = '';
+let descuento = 0; // en pesos
+let busqueda = '';
+
+const subtotalCarrito = () => carrito.reduce((a, i) => a + i.precio * i.cant, 0);
+const totalCarrito = () => Math.max(0, subtotalCarrito() - descuento);
+const nroTxt = (n) => '#' + String(n || 0).padStart(5, '0');
 
 function vistaVender() {
-  const total = carrito.reduce((a, i) => a + i.precio * i.cant, 0);
+  const sub = subtotalCarrito();
+  const total = totalCarrito();
+  const unidades = carrito.reduce((a, i) => a + i.cant, 0);
+  const cli = db.clientes.find((c) => c.id === clienteVenta);
+  const prods = listaProductosVenta();
+
   $('#app').innerHTML = `
+  <div class="venta-grid">
     <div class="tarjeta">
-      <input id="buscar" placeholder="Buscar por nombre o escanear código" autocomplete="off" enterkeyhint="search">
-      <div id="resultados" class="resultados"></div>
-      <button class="btn chico" id="btn-libre" style="margin-top:6px">+ Importe libre</button>
-    </div>
+      <input id="buscar" placeholder="🔍  Buscar producto por nombre o código…" autocomplete="off" enterkeyhint="search" value="${esc(busqueda)}">
+      <div class="prod-lista" id="prod-lista">${prodListaHtml(prods)}</div>
+      <button class="linkbtn" id="btn-libre" style="margin-top:8px">+ Importe libre (fiambre, verdura, varios)</button>
 
-    <div class="tarjeta">
-      <h2>Ticket</h2>
-      ${carrito.length === 0 ? '<div class="vacio">Agregá productos para vender</div>' : `
-      <ul class="lista">
-        ${carrito.map((i, idx) => `
-          <li>
-            <div class="info">
-              <div class="nombre">${esc(i.nombre)}</div>
-              <div class="sub">${plata(i.precio)} c/u</div>
-            </div>
-            <div class="cant">
-              <button data-menos="${idx}">−</button><b>${i.cant}</b><button data-mas="${idx}">+</button>
-            </div>
-            <div class="monto">${plata(i.precio * i.cant)}</div>
-          </li>`).join('')}
-      </ul>`}
-      <div class="total"><span>Total</span><span>${plata(total)}</span></div>
+      <div class="ticket">
+        ${carrito.length === 0 ? '<div class="vacio">Todavía no agregaste productos</div>' : `
+        <ul class="lista">
+          ${carrito.map((i, idx) => `
+            <li>
+              <div class="info">
+                <div class="nombre">${esc(i.nombre)}</div>
+                <div class="sub">${plata(i.precio)} c/u · ${plata(i.precio * i.cant)}</div>
+              </div>
+              <div class="cant">
+                <button data-menos="${idx}" aria-label="Restar">−</button><b>${i.cant}</b><button data-mas="${idx}" aria-label="Sumar">+</button>
+                <button class="borrar" data-quitar="${idx}" aria-label="Quitar">🗑</button>
+              </div>
+            </li>`).join('')}
+        </ul>`}
+        <div class="subtotales">
+          <span>Subtotal: ${plata(sub)}</span>
+          <span>Descuento: <button class="linkbtn" id="btn-desc">${plata(descuento)}</button></span>
+          <span class="tot">Total: ${plata(total)}</span>
+        </div>
+      </div>
 
-      <div class="pagos">
+      <div class="pagos" style="margin-top:12px">
         ${MEDIOS.map((m) => `<button data-medio="${m}" class="${m === medio ? 'activo' : ''}">${m}</button>`).join('')}
       </div>
-
       ${medio === 'Efectivo' ? `
-        <label>Paga con</label>
-        <input id="pagaCon" inputmode="decimal" placeholder="Ej: 10000">
+        <div class="fila"><input id="pagaCon" inputmode="decimal" placeholder="Paga con… (para calcular el vuelto)"></div>
         <div id="vuelto" class="sub" style="margin-top:6px"></div>` : ''}
-
-      ${medio === 'Fiado' ? `
-        <label>Cliente</label>
-        <select id="clienteVenta">
-          <option value="">Elegir cliente…</option>
-          ${db.clientes.map((c) => `<option value="${c.id}" ${c.id === clienteVenta ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')}
-        </select>
-        ${db.clientes.length === 0 ? '<div class="sub" style="margin-top:6px">Primero cargá clientes en la pestaña Fiado.</div>' : ''}` : ''}
-
-      <div class="fila" style="margin-top:12px">
-        <button class="btn peligro fijo" id="btn-vaciar" ${carrito.length ? '' : 'disabled'}>Vaciar</button>
-        <button class="btn primario" id="btn-cobrar" ${carrito.length ? '' : 'disabled'}>Cobrar ${plata(total)}</button>
-      </div>
+      <button class="btn cobrar bloque" id="btn-cobrar" style="margin-top:12px" ${carrito.length ? '' : 'disabled'}>COBRAR ${plata(total)} 💳</button>
     </div>
-    ${ultimasVentasHtml()}
-  `;
+
+    <div class="tarjeta resumen">
+      <h2 style="font-size:1.25rem">Resumen de venta</h2>
+      <div class="dato"><span class="sub">Productos:</span><b>${unidades}</b></div>
+      <div class="dato">
+        <span class="sub">Cliente: <b style="color:var(--texto)">${cli ? esc(cli.nombre) : 'Público general'}</b></span>
+        ${cli ? '<button class="btn gris chico" id="btn-quitar-cli">Quitar</button>' : '<button class="btn agregar" id="btn-cli">+ Agregar</button>'}
+      </div>
+      <div class="dato"><span class="sub">Pago:</span><b>${esc(medio)}</b></div>
+      ${ultimasVentasHtml()}
+      <button class="btn cancelar bloque" id="btn-vaciar" style="margin-top:14px" ${carrito.length ? '' : 'disabled'}>Cancelar venta 🗑</button>
+    </div>
+  </div>`;
 
   const inp = $('#buscar');
-  inp.addEventListener('input', () => mostrarResultados(inp.value));
+  inp.addEventListener('input', () => { busqueda = inp.value; $('#prod-lista').innerHTML = prodListaHtml(listaProductosVenta()); });
   inp.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const q = inp.value.trim();
     if (!q) return;
     const exacto = db.productos.find((p) => p.codigo && p.codigo === q);
-    const lista = buscarProductos(q);
+    const lista = listaProductosVenta();
     const p = exacto || (lista.length === 1 ? lista[0] : null);
-    if (p) { agregar(p); }
+    if (p) { busqueda = ''; agregar(p); }
     else if (!lista.length) toast('No se encontró ese producto');
   });
-
-  $('#resultados').addEventListener('click', (e) => {
+  $('#prod-lista').addEventListener('click', (e) => {
     const b = e.target.closest('[data-prod]');
     if (b) agregar(db.productos.find((p) => p.id === b.dataset.prod));
   });
-  $('#btn-libre').addEventListener('click', importeLibre);
+  $('#btn-libre').onclick = importeLibre;
+  $('#btn-desc').onclick = pedirDescuento;
 
-  document.querySelectorAll('[data-mas]').forEach((b) => b.addEventListener('click', () => { carrito[b.dataset.mas].cant++; vistaVender(); }));
-  document.querySelectorAll('[data-menos]').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-mas]').forEach((b) => (b.onclick = () => { carrito[b.dataset.mas].cant++; vistaVender(); }));
+  document.querySelectorAll('[data-menos]').forEach((b) => (b.onclick = () => {
     const i = carrito[b.dataset.menos];
     i.cant--;
     if (i.cant <= 0) carrito.splice(b.dataset.menos, 1);
+    ajustarDescuento(); vistaVender();
+  }));
+  document.querySelectorAll('[data-quitar]').forEach((b) => (b.onclick = () => { carrito.splice(b.dataset.quitar, 1); ajustarDescuento(); vistaVender(); }));
+  document.querySelectorAll('[data-medio]').forEach((b) => (b.onclick = () => {
+    medio = b.dataset.medio;
+    if (medio === 'Fiado' && !clienteVenta) { elegirCliente(); return; }
     vistaVender();
   }));
-  document.querySelectorAll('[data-medio]').forEach((b) => b.addEventListener('click', () => { medio = b.dataset.medio; vistaVender(); }));
 
   const pagaCon = $('#pagaCon');
   if (pagaCon) pagaCon.addEventListener('input', () => {
     const v = num(pagaCon.value) - total;
     $('#vuelto').innerHTML = pagaCon.value ? (v >= 0 ? `Vuelto: <b class="verde">${plata(v)}</b>` : `<span class="rojo">Faltan ${plata(-v)}</span>`) : '';
   });
-  const sel = $('#clienteVenta');
-  if (sel) sel.addEventListener('change', () => { clienteVenta = sel.value; });
+  const bc = $('#btn-cli'); if (bc) bc.onclick = elegirCliente;
+  const bq = $('#btn-quitar-cli'); if (bq) bq.onclick = () => { clienteVenta = ''; if (medio === 'Fiado') medio = 'Efectivo'; vistaVender(); };
 
-  $('#btn-vaciar').addEventListener('click', () => { carrito = []; vistaVender(); });
-  $('#btn-cobrar').addEventListener('click', cobrar);
+  $('#btn-vaciar').onclick = () => {
+    if (carrito.length > 2 && !confirm('¿Cancelar la venta actual?')) return;
+    carrito = []; descuento = 0; clienteVenta = ''; medio = 'Efectivo'; vistaVender();
+  };
+  $('#btn-cobrar').onclick = cobrar;
   document.querySelectorAll('[data-venta]').forEach((b) => b.addEventListener('click', () => verVenta(b.dataset.venta)));
 
-  if (!('ontouchstart' in window)) inp.focus();
+  if (!('ontouchstart' in window)) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
 }
 
-function buscarProductos(q) {
-  q = q.trim().toLowerCase();
-  if (!q) return [];
-  return db.productos.filter((p) => p.nombre.toLowerCase().includes(q) || (p.codigo || '').includes(q)).slice(0, 8);
+function listaProductosVenta() {
+  const q = busqueda.trim().toLowerCase();
+  return db.productos
+    .filter((p) => !q || p.nombre.toLowerCase().includes(q) || (p.codigo || '').includes(q))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+    .slice(0, 40);
 }
-function mostrarResultados(q) {
-  const r = buscarProductos(q);
-  $('#resultados').innerHTML = r.map((p) => `
-    <button data-prod="${p.id}">
-      <span>${esc(p.nombre)} <span class="sub">· stock ${p.stock}</span></span><b>${plata(p.precio)}</b>
-    </button>`).join('') || (q.trim() ? '<div class="sub">Sin resultados</div>' : '');
+function prodListaHtml(prods) {
+  if (!db.productos.length) return '<div class="vacio">No hay productos. Cargalos en <b>Productos</b> o en <b>Más → ejemplo</b>.</div>';
+  if (!prods.length) return '<div class="vacio">Sin resultados</div>';
+  return prods.map((p) => `
+    <div class="item">
+      <div class="info" style="min-width:0">
+        <div class="nombre" style="font-weight:600">${esc(p.nombre)}</div>
+        <div class="sub">${plata(p.precio)} · Stock: <span class="${p.stock <= (p.stockMin || 0) ? 'rojo' : ''}">${p.stock}</span></div>
+      </div>
+      <button class="btn agregar" data-prod="${p.id}">+ Agregar</button>
+    </div>`).join('');
 }
 function agregar(p) {
   if (!p) return;
@@ -199,7 +243,40 @@ function agregar(p) {
   if (ya) ya.cant++;
   else carrito.push({ id: p.id, nombre: p.nombre, precio: p.precio, costo: p.costo || 0, cant: 1 });
   if (p.stock <= 0) toast(`Ojo: ${p.nombre} figura sin stock`);
+  else toast(`${p.nombre} agregado`);
   vistaVender();
+}
+function ajustarDescuento() { descuento = Math.min(descuento, subtotalCarrito()); }
+function pedirDescuento() {
+  if (!carrito.length) return toast('Primero agregá productos');
+  abrirModal(`
+    <h2>Descuento</h2>
+    <div class="sub">Subtotal: ${plata(subtotalCarrito())}</div>
+    <label>Porcentaje</label><input id="d-pct" inputmode="decimal" placeholder="Ej: 10">
+    <label>…o monto en pesos</label><input id="d-monto" inputmode="decimal" value="${descuento || ''}" placeholder="0">
+    <div class="modal-botones"><button class="btn gris" id="d-quitar">Sin descuento</button><button class="btn primario" id="d-ok">Aplicar</button></div>`);
+  $('#d-pct').oninput = (e) => { $('#d-monto').value = Math.round(subtotalCarrito() * num(e.target.value) / 100) || ''; };
+  $('#d-quitar').onclick = () => { descuento = 0; cerrarModal(); vistaVender(); };
+  $('#d-ok').onclick = () => { descuento = Math.max(0, num($('#d-monto').value)); ajustarDescuento(); cerrarModal(); vistaVender(); };
+}
+function elegirCliente() {
+  abrirModal(`
+    <h2>Elegir cliente</h2>
+    ${db.clientes.length ? `<ul class="lista">${db.clientes.slice().sort((a, b) => a.nombre.localeCompare(b.nombre)).map((c) => `
+      <li data-elegir="${c.id}" style="cursor:pointer"><div class="info"><div class="nombre">${esc(c.nombre)}</div><div class="sub">Debe ${plata(saldoCliente(c.id))}</div></div><span class="btn chico">Elegir</span></li>`).join('')}</ul>`
+      : '<div class="vacio">No hay clientes cargados</div>'}
+    <label>Nuevo cliente</label>
+    <div class="fila"><input id="nc-nombre" placeholder="Nombre"><button class="btn primario fijo" id="nc-ok">Crear</button></div>
+    <div class="modal-botones"><button class="btn gris" id="ec-cancel">Cancelar</button></div>`);
+  document.querySelectorAll('[data-elegir]').forEach((li) => (li.onclick = () => { clienteVenta = li.dataset.elegir; cerrarModal(); vistaVender(); }));
+  $('#nc-ok').onclick = () => {
+    const nombre = $('#nc-nombre').value.trim();
+    if (!nombre) return toast('Poné un nombre');
+    const c = { id: uid(), nombre, telefono: '' };
+    db.clientes.push(c); guardar();
+    clienteVenta = c.id; cerrarModal(); vistaVender();
+  };
+  $('#ec-cancel').onclick = () => { if (medio === 'Fiado' && !clienteVenta) medio = 'Efectivo'; cerrarModal(); vistaVender(); };
 }
 function importeLibre() {
   abrirModal(`
@@ -207,7 +284,7 @@ function importeLibre() {
     <div class="sub">Para algo que no está cargado (fiambre, verdura, etc.)</div>
     <label>Descripción</label><input id="l-nombre" value="Varios">
     <label>Importe</label><input id="l-precio" inputmode="decimal" placeholder="0">
-    <div class="modal-botones"><button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn primario" id="l-ok">Agregar</button></div>`);
+    <div class="modal-botones"><button class="btn gris" onclick="cerrarModal()">Cancelar</button><button class="btn primario" id="l-ok">Agregar</button></div>`);
   $('#l-precio').focus();
   $('#l-ok').onclick = () => {
     const precio = num($('#l-precio').value);
@@ -218,15 +295,20 @@ function importeLibre() {
 }
 function cobrar() {
   if (!carrito.length) return;
-  if (medio === 'Fiado' && !clienteVenta) return toast('Elegí a qué cliente se le fía');
-  const total = carrito.reduce((a, i) => a + i.precio * i.cant, 0);
+  if (medio === 'Fiado' && !clienteVenta) return elegirCliente();
+  const subtotal = subtotalCarrito();
+  const total = totalCarrito();
+  db.ultimoNro = (db.ultimoNro || db.ventas.length) + 1;
   const venta = {
     id: uid(),
+    nro: db.ultimoNro,
     fecha: new Date().toISOString(),
     items: carrito.map((i) => ({ ...i })),
+    subtotal,
+    descuento,
     total,
     medio,
-    clienteId: medio === 'Fiado' ? clienteVenta : null,
+    clienteId: clienteVenta || null,
   };
   db.ventas.push(venta);
   carrito.forEach((i) => {
@@ -234,32 +316,32 @@ function cobrar() {
     if (p) p.stock -= i.cant;
   });
   guardar();
-  carrito = []; clienteVenta = ''; medio = 'Efectivo';
-  toast(`Venta registrada: ${plata(total)}`);
-  vistaVender();
+  carrito = []; clienteVenta = ''; medio = 'Efectivo'; descuento = 0; busqueda = '';
+  toast(`Venta ${nroTxt(venta.nro)} registrada: ${plata(total)}`);
+  render();
 }
 function ultimasVentasHtml() {
   const v = db.ventas.filter((x) => diaDe(x.fecha) === hoy()).slice(-5).reverse();
-  if (!v.length) return '';
-  return `<div class="tarjeta"><h2>Últimas ventas de hoy</h2><ul class="lista">
-    ${v.map((x) => `<li data-venta="${x.id}">
-      <div class="info"><div class="nombre ${x.anulada ? 'rojo' : ''}">${hora(x.fecha)} · ${esc(x.medio)}${x.anulada ? ' (anulada)' : ''}</div>
-      <div class="sub">${x.items.map((i) => `${i.cant}× ${esc(i.nombre)}`).join(', ')}</div></div>
-      <div class="monto">${plata(x.total)}</div></li>`).join('')}
-  </ul></div>`;
+  return `<h3>Últimas ventas</h3>
+    ${v.length ? `<ul class="lista">${v.map((x, i) => `<li data-venta="${x.id}" style="cursor:pointer">
+      <div class="info"><div class="nro ${x.anulada ? 'rojo' : ''}">${nroTxt(x.nro)}${x.anulada ? ' (anulada)' : ''}</div>
+      <div class="sub">Hoy ${hora(x.fecha)} · ${esc(x.medio)}</div></div>
+      <div class="monto ${i === 0 && !x.anulada ? 'verde' : ''}" style="font-size:1.1rem">${plata(x.total)}</div></li>`).join('')}</ul>`
+      : '<div class="vacio">Todavía no hay ventas hoy</div>'}`;
 }
 function verVenta(id) {
   const v = db.ventas.find((x) => x.id === id);
   if (!v) return;
   const cli = v.clienteId ? db.clientes.find((c) => c.id === v.clienteId) : null;
   abrirModal(`
-    <h2>Venta ${hora(v.fecha)}</h2>
+    <h2>Venta ${nroTxt(v.nro)}</h2>
     <div class="sub">${new Date(v.fecha).toLocaleString('es-AR')} · ${esc(v.medio)}${cli ? ' · ' + esc(cli.nombre) : ''}</div>
     <ul class="lista">${v.items.map((i) => `<li><div class="info">${i.cant}× ${esc(i.nombre)}</div><div class="monto">${plata(i.precio * i.cant)}</div></li>`).join('')}</ul>
+    ${v.descuento ? `<div class="sub">Subtotal ${plata(v.subtotal)} · Descuento −${plata(v.descuento)}</div>` : ''}
     <div class="total"><span>Total</span><span>${plata(v.total)}</span></div>
     ${v.anulada ? '<div class="aviso">Esta venta está anulada.</div>' : ''}
     <div class="modal-botones">
-      <button class="btn" onclick="cerrarModal()">Cerrar</button>
+      <button class="btn gris" onclick="cerrarModal()">Cerrar</button>
       ${v.anulada ? '' : '<button class="btn peligro" id="anular">Anular venta</button>'}
     </div>`);
   const b = $('#anular');
@@ -436,7 +518,7 @@ function editarCliente(id) {
 function verCliente(id) {
   const c = db.clientes.find((x) => x.id === id);
   const movs = [
-    ...db.ventas.filter((v) => v.clienteId === id && !v.anulada).map((v) => ({ fecha: v.fecha, txt: v.items.map((i) => `${i.cant}× ${i.nombre}`).join(', '), monto: v.total })),
+    ...db.ventas.filter((v) => v.clienteId === id && v.medio === 'Fiado' && !v.anulada).map((v) => ({ fecha: v.fecha, txt: v.items.map((i) => `${i.cant}× ${i.nombre}`).join(', '), monto: v.total })),
     ...db.pagosFiado.filter((p) => p.clienteId === id).map((p) => ({ fecha: p.fecha, txt: 'Pago (' + p.medio + ')', monto: -p.monto })),
   ].sort((a, b) => b.fecha.localeCompare(a.fecha));
   const saldo = saldoCliente(id);
@@ -583,6 +665,7 @@ function vistaMas() {
     </div>
     <div class="tarjeta"><h2>Ajustes</h2>
       <label>Nombre del negocio</label><input id="neg" value="${esc(db.negocio)}">
+      <label>Nombre del cajero</label><input id="caj" value="${esc(db.cajero)}" placeholder="Ej: Ana López">
       <div class="fila" style="margin-top:12px">
         <button class="btn" id="exp">⬇ Copia de seguridad</button>
         <button class="btn" id="imp">⬆ Restaurar</button>
@@ -594,6 +677,7 @@ function vistaMas() {
 
   document.querySelectorAll('[data-per]').forEach((b) => (b.onclick = () => { periodo = +b.dataset.per; vistaMas(); }));
   $('#neg').onchange = (e) => { db.negocio = e.target.value.trim() || 'Mi Kiosco'; guardar(); render(); };
+  $('#caj').onchange = (e) => { db.cajero = e.target.value.trim(); guardar(); render(); };
   $('#exp').onclick = exportar;
   $('#imp').onclick = () => $('#archivo').click();
   $('#archivo').onchange = importar;
