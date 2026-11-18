@@ -2,7 +2,7 @@
    Todo se guarda en el navegador (localStorage). Sin servidor. */
 
 const CLAVE = 'kiosco_pos_v1';
-const VERSION = '1.4 · vuelto';
+const VERSION = '1.5 · por peso';
 const MEDIOS = ['Efectivo', 'Débito', 'Crédito', 'Transferencia', 'Mercado Pago'];
 
 // ---------- Datos ----------
@@ -42,6 +42,11 @@ function fechaLocal(d) {
 }
 const diaDe = (iso) => fechaLocal(new Date(iso));
 const hora = (iso) => new Date(iso).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+const kg = (n) => Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const red3 = (n) => Math.round(n * 1000) / 1000;
+const precioTxt = (p) => plata(p.precio) + (p.porPeso ? '/kg' : '');
+const stockTxt = (p) => (p.porPeso ? kg(p.stock) + ' kg' : p.stock + ' u.');
+const cantStock = (i) => (i.kg != null ? i.kg : i.cant); // cuánto descuenta del stock
 const fechaLinda = (d) => new Date(d + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
 
 function toast(msg) {
@@ -106,7 +111,7 @@ const nroTxt = (n) => '#' + String(n || 0).padStart(5, '0');
 function vistaVender() {
   const sub = subtotalCarrito();
   const total = totalCarrito();
-  const unidades = carrito.reduce((a, i) => a + i.cant, 0);
+  const unidades = carrito.reduce((a, i) => a + (i.kg != null ? 1 : i.cant), 0);
   const prods = listaProductosVenta();
 
   $('#app').innerHTML = `
@@ -126,10 +131,12 @@ function vistaVender() {
             <li>
               <div class="info">
                 <div class="nombre">${esc(i.nombre)}</div>
-                <div class="sub">${plata(i.precio)} c/u · ${plata(i.precio * i.cant)}</div>
+                <div class="sub">${i.kg != null ? `${kg(i.kg)} kg × ${plata(i.precioKg)}/kg = <b>${plata(i.precio)}</b>` : `${plata(i.precio)} c/u · ${plata(i.precio * i.cant)}`}</div>
               </div>
               <div class="cant">
-                <button data-menos="${idx}" aria-label="Restar">−</button><b>${i.cant}</b><button data-mas="${idx}" aria-label="Sumar">+</button>
+                ${i.kg != null
+                  ? `<button class="btn chico" style="width:auto;border-radius:8px" data-peso="${idx}">⚖️ Peso</button>`
+                  : `<button data-menos="${idx}" aria-label="Restar">−</button><b>${i.cant}</b><button data-mas="${idx}" aria-label="Sumar">+</button>`}
                 <button class="borrar" data-quitar="${idx}" aria-label="Quitar">🗑</button>
               </div>
             </li>`).join('')}
@@ -192,6 +199,10 @@ function vistaVender() {
     if (i.cant <= 0) carrito.splice(b.dataset.menos, 1);
     ajustarDescuento(); vistaVender();
   }));
+  document.querySelectorAll('[data-peso]').forEach((b) => (b.onclick = () => {
+    const i = carrito[b.dataset.peso];
+    pedirPeso(db.productos.find((p) => p.id === i.id) || { id: i.id, nombre: i.nombre, precio: i.precioKg, costo: 0, porPeso: true }, +b.dataset.peso);
+  }));
   document.querySelectorAll('[data-quitar]').forEach((b) => (b.onclick = () => { carrito.splice(b.dataset.quitar, 1); ajustarDescuento(); vistaVender(); }));
   document.querySelectorAll('[data-medio]').forEach((b) => (b.onclick = () => { medio = b.dataset.medio; vistaVender(); }));
   $('#btn-scan').onclick = () => escanear(venderPorCodigo);
@@ -237,19 +248,69 @@ function prodListaHtml(prods) {
     <div class="item">
       <div class="info" style="min-width:0">
         <div class="nombre" style="font-weight:600">${esc(p.nombre)}</div>
-        <div class="sub">${plata(p.precio)} · Stock: <span class="${p.stock <= (p.stockMin || 0) ? 'rojo' : ''}">${p.stock}</span></div>
+        <div class="sub">${p.porPeso ? '⚖️ ' : ''}${precioTxt(p)}${p.codigo ? ' · Cód. ' + esc(p.codigo) : ''} · Stock: <span class="${p.stock <= (p.stockMin || 0) ? 'rojo' : ''}">${stockTxt(p)}</span></div>
       </div>
       <button class="btn agregar" data-prod="${p.id}">+ Agregar</button>
     </div>`).join('');
 }
 function agregar(p) {
   if (!p) return;
+  if (p.porPeso) return pedirPeso(p);
   const ya = carrito.find((i) => i.id === p.id);
   if (ya) ya.cant++;
   else carrito.push({ id: p.id, nombre: p.nombre, precio: p.precio, costo: p.costo || 0, cant: 1 });
   if (p.stock <= 0) toast(`Ojo: ${p.nombre} figura sin stock`);
   else toast(`${p.nombre} agregado`);
   vistaVender();
+}
+function pedirPeso(p, idxEditar = null) {
+  const actual = idxEditar != null ? carrito[idxEditar] : null;
+  let modo = 'peso';
+  abrirModal(`
+    <h2>⚖️ ${esc(p.nombre)}</h2>
+    <div class="sub">${plata(p.precio)} el kilo</div>
+    <div class="pagos" style="grid-template-columns:1fr 1fr;margin-top:12px">
+      <button data-modo="peso" class="activo">Por peso</button>
+      <button data-modo="importe">Por importe ($)</button>
+    </div>
+    <label id="w-label">Peso en gramos</label>
+    <input id="w-valor" inputmode="decimal" placeholder="Ej: 250" value="${actual ? Math.round(actual.kg * 1000) : ''}" style="font-size:1.4rem;font-weight:700">
+    <div class="billetes" id="w-rapidos"></div>
+    <div class="vuelto-box" id="w-res"></div>
+    <div class="modal-botones"><button class="btn gris" onclick="cerrarModal()">Cancelar</button><button class="btn primario" id="w-ok">${actual ? 'Actualizar' : 'Agregar'}</button></div>`);
+  const calc = () => {
+    const v = num($('#w-valor').value);
+    if (v <= 0) return null;
+    if (modo === 'peso') return { kg: red3(v / 1000), precio: Math.round((v / 1000) * p.precio) };
+    return { kg: red3(v / p.precio), precio: Math.round(v) };
+  };
+  const mostrar = () => {
+    const r = calc();
+    $('#w-res').innerHTML = r ? `<span>${kg(r.kg)} kg</span><b class="verde">${plata(r.precio)}</b>` : '<span class="sub">Ingresá el valor</span>';
+  };
+  const rapidos = () => {
+    const vals = modo === 'peso' ? [100, 150, 200, 250, 500, 1000] : [1000, 2000, 3000, 5000];
+    $('#w-rapidos').innerHTML = vals.map((v) => `<button data-rap="${v}">${modo === 'peso' ? (v >= 1000 ? v / 1000 + ' kg' : v + ' g') : plata(v)}</button>`).join('');
+    document.querySelectorAll('[data-rap]').forEach((b) => (b.onclick = () => { $('#w-valor').value = b.dataset.rap; mostrar(); }));
+  };
+  document.querySelectorAll('[data-modo]').forEach((b) => (b.onclick = () => {
+    modo = b.dataset.modo;
+    document.querySelectorAll('[data-modo]').forEach((x) => x.classList.toggle('activo', x === b));
+    $('#w-label').textContent = modo === 'peso' ? 'Peso en gramos' : 'Importe que pide el cliente ($)';
+    $('#w-valor').placeholder = modo === 'peso' ? 'Ej: 250' : 'Ej: 2000';
+    $('#w-valor').value = ''; rapidos(); mostrar(); $('#w-valor').focus();
+  }));
+  $('#w-valor').oninput = mostrar;
+  $('#w-valor').onkeydown = (e) => { if (e.key === 'Enter') $('#w-ok').click(); };
+  rapidos(); mostrar(); $('#w-valor').focus();
+  $('#w-ok').onclick = () => {
+    const r = calc();
+    if (!r) return toast('Poné el peso o el importe');
+    const item = { id: p.id, nombre: p.nombre, porPeso: true, kg: r.kg, precioKg: p.precio, precio: r.precio, costo: Math.round(r.kg * (p.costo || 0)), cant: 1 };
+    if (actual) carrito[idxEditar] = item; else carrito.push(item);
+    if (p.stock != null && p.stock < r.kg) toast(`Ojo: ${p.nombre} figura con poco stock`);
+    cerrarModal(); ajustarDescuento(); vistaVender();
+  };
 }
 function ajustarDescuento() { descuento = Math.min(descuento, subtotalCarrito()); }
 function pedirDescuento() {
@@ -306,7 +367,7 @@ function cobrar() {
   db.ventas.push(venta);
   carrito.forEach((i) => {
     const p = db.productos.find((x) => x.id === i.id);
-    if (p) p.stock -= i.cant;
+    if (p) p.stock = red3(p.stock - cantStock(i));
   });
   guardar();
   carrito = []; medio = 'Efectivo'; descuento = 0; busqueda = ''; pagaCon = '';
@@ -338,7 +399,7 @@ function verVenta(id) {
   abrirModal(`
     <h2>Venta ${nroTxt(v.nro)}</h2>
     <div class="sub">${new Date(v.fecha).toLocaleString('es-AR')} · ${esc(v.medio)}</div>
-    <ul class="lista">${v.items.map((i) => `<li><div class="info">${i.cant}× ${esc(i.nombre)}</div><div class="monto">${plata(i.precio * i.cant)}</div></li>`).join('')}</ul>
+    <ul class="lista">${v.items.map((i) => `<li><div class="info">${i.kg != null ? kg(i.kg) + ' kg' : i.cant + '×'} ${esc(i.nombre)}</div><div class="monto">${plata(i.precio * i.cant)}</div></li>`).join('')}</ul>
     ${v.descuento ? `<div class="sub">Subtotal ${plata(v.subtotal)} · Descuento −${plata(v.descuento)}</div>` : ''}
     ${v.pagaCon != null ? `<div class="sub">Pagó con ${plata(v.pagaCon)} · Vuelto ${plata(v.vuelto)}</div>` : ''}
     <div class="total"><span>Total</span><span>${plata(v.total)}</span></div>
@@ -351,7 +412,7 @@ function verVenta(id) {
   if (b) b.onclick = () => {
     if (!confirm('¿Anular esta venta? El stock se devuelve.')) return;
     v.anulada = true;
-    v.items.forEach((i) => { const p = db.productos.find((x) => x.id === i.id); if (p) p.stock += i.cant; });
+    v.items.forEach((i) => { const p = db.productos.find((x) => x.id === i.id); if (p) p.stock = red3(p.stock + cantStock(i)); });
     guardar(); cerrarModal(); render(); toast('Venta anulada');
   };
 }
@@ -387,10 +448,10 @@ function vistaProductos() {
           <li data-edit="${p.id}">
             <div class="info">
               <div class="nombre">${esc(p.nombre)}</div>
-              <div class="sub">${esc(p.categoria || 'Sin categoría')}${p.codigo ? ' · ' + esc(p.codigo) : ''}</div>
+              <div class="sub">${p.porPeso ? '⚖️ Por peso · ' : ''}${esc(p.categoria || 'Sin categoría')}${p.codigo ? ' · ' + esc(p.codigo) : ''}</div>
             </div>
-            <span class="etiqueta ${p.stock <= (p.stockMin || 0) ? 'bajo' : 'ok'}">${p.stock} u.</span>
-            <div class="monto">${plata(p.precio)}</div>
+            <span class="etiqueta ${p.stock <= (p.stockMin || 0) ? 'bajo' : 'ok'}">${stockTxt(p)}</span>
+            <div class="monto">${precioTxt(p)}</div>
           </li>`).join('')}
       </ul>`}
     </div>
@@ -405,18 +466,20 @@ function vistaProductos() {
 }
 
 function editarProducto(id, codigoInicial = '') {
-  const p = id ? db.productos.find((x) => x.id === id) : { nombre: '', codigo: codigoInicial, categoria: '', costo: '', precio: '', stock: '', stockMin: '' };
+  const p = id ? db.productos.find((x) => x.id === id) : { nombre: '', codigo: codigoInicial, categoria: '', costo: '', precio: '', stock: '', stockMin: '', porPeso: false };
   abrirModal(`
     <h2>${id ? 'Editar' : 'Nuevo'} producto</h2>
     <label>Nombre *</label><input id="p-nombre" value="${esc(p.nombre)}">
-    <label>Código de barras</label>
+    <label class="check"><input type="checkbox" id="p-peso" ${p.porPeso ? 'checked' : ''}> ⚖️ Se vende por peso (fiambres, quesos, etc.)</label>
+    <label id="p-cod-label">Código de barras</label>
     <div class="fila"><input id="p-codigo" value="${esc(p.codigo)}" inputmode="numeric" placeholder="Escribilo o escanealo"><button class="btn primario fijo" id="p-scan" type="button">📷 Escanear</button></div>
+    <button class="linkbtn oculto" id="p-gen" type="button" style="margin-top:6px">Usar el próximo código libre</button>
     <label>Categoría</label><input id="p-cat" value="${esc(p.categoria)}" list="cats" placeholder="Golosinas, Bebidas, Almacén…">
     <div class="grilla2">
-      <div><label>Costo</label><input id="p-costo" value="${p.costo}" inputmode="decimal"></div>
-      <div><label>Precio venta *</label><input id="p-precio" value="${p.precio}" inputmode="decimal"></div>
-      <div><label>Stock</label><input id="p-stock" value="${p.stock}" inputmode="numeric"></div>
-      <div><label>Stock mínimo</label><input id="p-min" value="${p.stockMin}" inputmode="numeric"></div>
+      <div><label id="l-costo">Costo</label><input id="p-costo" value="${p.costo}" inputmode="decimal"></div>
+      <div><label id="l-precio">Precio venta *</label><input id="p-precio" value="${p.precio}" inputmode="decimal"></div>
+      <div><label id="l-stock">Stock</label><input id="p-stock" value="${p.stock}" inputmode="decimal"></div>
+      <div><label id="l-min">Stock mínimo</label><input id="p-min" value="${p.stockMin}" inputmode="decimal"></div>
     </div>
     <div id="p-margen" class="sub" style="margin-top:8px"></div>
     <div class="modal-botones">
@@ -429,6 +492,22 @@ function editarProducto(id, codigoInicial = '') {
     $('#p-margen').textContent = c > 0 && v > 0 ? `Ganancia: ${plata(v - c)} (${Math.round(((v - c) / c) * 100)}%)` : '';
   };
   $('#p-costo').oninput = margen; $('#p-precio').oninput = margen; margen();
+  const modoPeso = () => {
+    const w = $('#p-peso').checked;
+    $('#p-cod-label').textContent = w ? 'Código propio (ej: 101)' : 'Código de barras';
+    $('#p-codigo').placeholder = w ? 'Código corto para tipearlo rápido' : 'Escribilo o escanealo';
+    $('#l-costo').textContent = w ? 'Costo por kg' : 'Costo';
+    $('#l-precio').textContent = w ? 'Precio por kg *' : 'Precio venta *';
+    $('#l-stock').textContent = w ? 'Stock (kg)' : 'Stock';
+    $('#l-min').textContent = w ? 'Stock mínimo (kg)' : 'Stock mínimo';
+    $('#p-gen').classList.toggle('oculto', !w);
+  };
+  $('#p-peso').onchange = modoPeso; modoPeso();
+  $('#p-gen').onclick = () => {
+    let n = 101;
+    while (db.productos.some((x) => x.codigo === String(n) && x.id !== id)) n++;
+    $('#p-codigo').value = String(n);
+  };
   $('#p-scan').onclick = () => escanear((codigo) => {
     const otro = db.productos.find((x) => x.codigo === codigo && x.id !== id);
     $('#p-codigo').value = codigo;
@@ -449,16 +528,19 @@ function editarProducto(id, codigoInicial = '') {
       costo: num($('#p-costo').value),
       stock: num($('#p-stock').value),
       stockMin: num($('#p-min').value),
+      porPeso: $('#p-peso').checked,
     };
+    let nuevo = null;
     if (id) Object.assign(p, datos);
-    else db.productos.push({ id: uid(), ...datos });
-    guardar(); cerrarModal(); vistaProductos(); toast('Producto guardado');
+    else { nuevo = { id: uid(), ...datos }; db.productos.push(nuevo); }
+    guardar(); cerrarModal(); toast('Producto guardado');
+    if (nuevo && tab === 'vender') agregar(nuevo); else render();
   };
   const borrar = $('#p-borrar');
   if (borrar) borrar.onclick = () => {
     if (!confirm(`¿Borrar "${p.nombre}"?`)) return;
     db.productos = db.productos.filter((x) => x.id !== id);
-    guardar(); cerrarModal(); vistaProductos(); toast('Producto borrado');
+    guardar(); cerrarModal(); render(); toast('Producto borrado');
   };
 }
 
@@ -564,7 +646,7 @@ function vistaMas() {
   ventas.forEach((v) => v.items.forEach((i) => {
     const k = i.libre ? 'Importe libre' : i.nombre;
     ranking[k] = ranking[k] || { cant: 0, total: 0 };
-    ranking[k].cant += i.cant; ranking[k].total += i.cant * i.precio;
+    ranking[k].cant += i.kg != null ? i.kg : i.cant; ranking[k].peso = i.kg != null; ranking[k].total += i.cant * i.precio;
   }));
   const top = Object.entries(ranking).sort((a, b) => b[1].total - a[1].total).slice(0, 10);
   const dias = [];
@@ -592,10 +674,10 @@ function vistaMas() {
       <div class="fila sub" style="margin-top:4px"><span>${fechaLinda(dias[0].k)}</span><span style="text-align:right">${fechaLinda(dias[dias.length - 1].k)}</span></div>
     </div>` : ''}
     <div class="tarjeta"><h2>Más vendidos</h2>
-      ${top.length ? `<ul class="lista">${top.map(([n, d]) => `<li><div class="info"><div class="nombre">${esc(n)}</div><div class="sub">${d.cant} unidades</div></div><div class="monto">${plata(d.total)}</div></li>`).join('')}</ul>` : '<div class="vacio">Sin ventas en este período</div>'}
+      ${top.length ? `<ul class="lista">${top.map(([n, d]) => `<li><div class="info"><div class="nombre">${esc(n)}</div><div class="sub">${d.peso ? kg(d.cant) + ' kg' : d.cant + ' unidades'}</div></div><div class="monto">${plata(d.total)}</div></li>`).join('')}</ul>` : '<div class="vacio">Sin ventas en este período</div>'}
     </div>
     <div class="tarjeta"><h2>Para reponer (${bajos.length})</h2>
-      ${bajos.length ? `<ul class="lista">${bajos.map((p) => `<li><span>${esc(p.nombre)}</span><span class="etiqueta bajo">${p.stock} / mín ${p.stockMin || 0}</span></li>`).join('')}</ul>` : '<div class="vacio">Nada para reponer 👌</div>'}
+      ${bajos.length ? `<ul class="lista">${bajos.map((p) => `<li><span>${esc(p.nombre)}</span><span class="etiqueta bajo">${stockTxt(p)} / mín ${p.stockMin || 0}</span></li>`).join('')}</ul>` : '<div class="vacio">Nada para reponer 👌</div>'}
       <div class="sub" style="margin-top:8px">Mercadería en stock (a costo): <b>${plata(valorStock)}</b></div>
     </div>
     <div class="tarjeta"><h2>Ajustes</h2>
@@ -655,11 +737,14 @@ function cargarDemo() {
     ['Leche 1L', 'Lácteos', 1000, 1500, 3, 6, ''],
     ['Pan lactal', 'Panificados', 1800, 2800, 6, 3, ''],
     ['Lavandina 1L', 'Limpieza', 700, 1200, 8, 3, ''],
+    ['Queso fresco', 'Fiambrería', 6000, 9500, 4, 1, '101', true],
+    ['Jamón crudo', 'Fiambrería', 16000, 26000, 2, 0.5, '102', true],
+    ['Queso de máquina', 'Fiambrería', 8000, 12800, 3, 1, '103', true],
   ];
   let n = 0;
-  ej.forEach(([nombre, categoria, costo, precio, stock, stockMin, codigo]) => {
+  ej.forEach(([nombre, categoria, costo, precio, stock, stockMin, codigo, porPeso = false]) => {
     if (db.productos.some((p) => p.nombre === nombre)) return;
-    db.productos.push({ id: uid(), nombre, categoria, costo, precio, stock, stockMin, codigo });
+    db.productos.push({ id: uid(), nombre, categoria, costo, precio, stock, stockMin, codigo, porPeso });
     n++;
   });
   guardar(); toast(`${n} productos de ejemplo cargados`);

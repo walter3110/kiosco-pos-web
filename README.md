@@ -4,7 +4,7 @@ Sistema de ventas web para kioscos y almacenes. Funciona desde el celular o la c
 
 ## Qué hace
 - **Vender**: buscar por nombre o código, escanear con la cámara del celular o con lector USB/Bluetooth, ticket con cantidades, descuentos, importe libre, medios de pago (efectivo con cálculo de vuelto, débito, crédito, transferencia, Mercado Pago). Anular ventas.
-- **Productos**: código de barras con la cámara, alta, edición y baja; código, categoría, costo, precio, stock y stock mínimo; margen de ganancia; aumento de precios masivo por % (todos o por categoría).
+- **Productos**: código de barras con la cámara, productos por peso (precio por kg, código propio, venta por gramos o por importe), alta, edición y baja; código, categoría, costo, precio, stock y stock mínimo; margen de ganancia; aumento de precios masivo por % (todos o por categoría).
 - **Caja del día**: ventas por medio de pago, ganancia, monto inicial, cierre de caja con diferencia.
 - **Reportes**: ventas por día, más vendidos, productos para reponer, valor del stock.
 - **Copia de seguridad**: exportar e importar los datos en un archivo.

@@ -96,7 +96,7 @@ label { display: block; font-size: .85rem; color: var(--gris); margin: 10px 0 4p
   background: var(--azul-claro); color: var(--azul);
 }
 .btn.primario { background: var(--azul); color: var(--blanco); }
-.btn.agregar { background: var(--naranja); color: #fff; padding: 8px 12px; font-size: .85rem; }
+.btn.agregar { background: var(--naranja); color: #fff; padding: 8px 12px; font-size: .85rem; white-space: nowrap; flex: 0 0 auto; }
 .btn.cobrar { background: var(--verde); color: #fff; font-size: 1.05rem; letter-spacing: .5px; padding: 14px; }
 .btn.cancelar { background: #dc2626; color: #fff; }
 .btn.gris { background: #e5e7eb; color: #374151; }
@@ -235,3 +235,6 @@ main.ancho { max-width: 1100px; }
 .vuelto-box b { font-size: 1.6rem; font-weight: 800; }
 .vuelto-grande { font-size: 3rem; font-weight: 900; color: var(--verde); margin: 6px 0 4px; }
 .vuelto-box .sub { font-size: .85rem; font-weight: 400; }
+
+label.check { display: flex; align-items: center; gap: 8px; color: var(--texto); font-size: .92rem; background: var(--azul-claro); padding: 10px 12px; border-radius: 10px; margin-top: 12px; }
+label.check input { width: 20px; height: 20px; flex: 0 0 auto; }
