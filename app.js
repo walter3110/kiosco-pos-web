@@ -2,7 +2,7 @@
    Todo se guarda en el navegador (localStorage). Sin servidor. */
 
 const CLAVE = 'kiosco_pos_v1';
-const VERSION = '1.3 · escáner';
+const VERSION = '1.4 · vuelto';
 const MEDIOS = ['Efectivo', 'Débito', 'Crédito', 'Transferencia', 'Mercado Pago'];
 
 // ---------- Datos ----------
@@ -52,6 +52,7 @@ function toast(msg) {
   toast.timer = setTimeout(() => t.classList.add('oculto'), 2200);
 }
 function abrirModal(html) {
+  $('#toast').classList.add('oculto');
   $('#modal-contenido').innerHTML = html;
   $('#modal').classList.remove('oculto');
 }
@@ -94,6 +95,8 @@ function render() {
 let carrito = []; // { id, nombre, precio, costo, cant }
 let medio = 'Efectivo';
 let descuento = 0; // en pesos
+let pagaCon = ''; // con cuánto paga el cliente (efectivo)
+const BILLETES = [1000, 2000, 5000, 10000, 20000];
 let busqueda = '';
 
 const subtotalCarrito = () => carrito.reduce((a, i) => a + i.precio * i.cant, 0);
@@ -142,8 +145,15 @@ function vistaVender() {
         ${MEDIOS.map((m) => `<button data-medio="${m}" class="${m === medio ? 'activo' : ''}">${m}</button>`).join('')}
       </div>
       ${medio === 'Efectivo' ? `
-        <div class="fila"><input id="pagaCon" inputmode="decimal" placeholder="Paga con… (para calcular el vuelto)"></div>
-        <div id="vuelto" class="sub" style="margin-top:6px"></div>` : ''}
+        <div class="efectivo">
+          <label for="pagaCon">¿Con cuánto paga el cliente?</label>
+          <input id="pagaCon" inputmode="decimal" placeholder="$ 0" value="${esc(pagaCon)}">
+          <div class="billetes">
+            <button data-billete="justo">Justo</button>
+            ${BILLETES.map((b) => `<button data-billete="${b}">${plata(b)}</button>`).join('')}
+          </div>
+          <div class="vuelto-box" id="vuelto">${vueltoHtml(total)}</div>
+        </div>` : ''}
       <button class="btn cobrar bloque" id="btn-cobrar" style="margin-top:12px" ${carrito.length ? '' : 'disabled'}>COBRAR ${plata(total)} 💳</button>
     </div>
 
@@ -186,11 +196,15 @@ function vistaVender() {
   document.querySelectorAll('[data-medio]').forEach((b) => (b.onclick = () => { medio = b.dataset.medio; vistaVender(); }));
   $('#btn-scan').onclick = () => escanear(venderPorCodigo);
 
-  const pagaCon = $('#pagaCon');
-  if (pagaCon) pagaCon.addEventListener('input', () => {
-    const v = num(pagaCon.value) - total;
-    $('#vuelto').innerHTML = pagaCon.value ? (v >= 0 ? `Vuelto: <b class="verde">${plata(v)}</b>` : `<span class="rojo">Faltan ${plata(-v)}</span>`) : '';
-  });
+  const inpPaga = $('#pagaCon');
+  if (inpPaga) {
+    inpPaga.addEventListener('input', () => { pagaCon = inpPaga.value; $('#vuelto').innerHTML = vueltoHtml(total); });
+    document.querySelectorAll('[data-billete]').forEach((b) => (b.onclick = () => {
+      pagaCon = b.dataset.billete === 'justo' ? String(total) : b.dataset.billete;
+      inpPaga.value = pagaCon;
+      $('#vuelto').innerHTML = vueltoHtml(total);
+    }));
+  }
 
   $('#btn-vaciar').onclick = () => {
     if (carrito.length > 2 && !confirm('¿Cancelar la venta actual?')) return;
@@ -202,6 +216,13 @@ function vistaVender() {
   if (!('ontouchstart' in window)) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
 }
 
+function vueltoHtml(total) {
+  if (!String(pagaCon).trim()) return '<span class="sub">Poné con cuánto paga para calcular el vuelto</span>';
+  const v = num(pagaCon) - total;
+  return v >= 0
+    ? `<span>Vuelto</span><b class="verde">${plata(v)}</b>`
+    : `<span class="rojo">Falta</span><b class="rojo">${plata(-v)}</b>`;
+}
 function listaProductosVenta() {
   const q = busqueda.trim().toLowerCase();
   return db.productos
@@ -267,6 +288,8 @@ function cobrar() {
   if (!carrito.length) return;
   const subtotal = subtotalCarrito();
   const total = totalCarrito();
+  const paga = medio === 'Efectivo' && String(pagaCon).trim() ? num(pagaCon) : null;
+  if (paga !== null && paga < total) return toast(`Falta plata: el cliente paga ${plata(paga)} y son ${plata(total)}`);
   db.ultimoNro = (db.ultimoNro || db.ventas.length) + 1;
   const venta = {
     id: uid(),
@@ -277,6 +300,8 @@ function cobrar() {
     descuento,
     total,
     medio,
+    pagaCon: paga,
+    vuelto: paga !== null ? paga - total : null,
   };
   db.ventas.push(venta);
   carrito.forEach((i) => {
@@ -284,9 +309,19 @@ function cobrar() {
     if (p) p.stock -= i.cant;
   });
   guardar();
-  carrito = []; medio = 'Efectivo'; descuento = 0; busqueda = '';
-  toast(`Venta ${nroTxt(venta.nro)} registrada: ${plata(total)}`);
+  carrito = []; medio = 'Efectivo'; descuento = 0; busqueda = ''; pagaCon = '';
   render();
+  if (venta.vuelto !== null) {
+    abrirModal(`
+      <div style="text-align:center">
+        <div class="sub">Venta ${nroTxt(venta.nro)} · Total ${plata(total)} · Pagó ${plata(venta.pagaCon)}</div>
+        <div style="font-size:1.1rem;margin-top:14px">Darle de vuelto</div>
+        <div class="vuelto-grande">${plata(venta.vuelto)}</div>
+      </div>
+      <div class="modal-botones"><button class="btn cobrar" onclick="cerrarModal()">Listo</button></div>`);
+  } else {
+    toast(`Venta ${nroTxt(venta.nro)} registrada: ${plata(total)}`);
+  }
 }
 function ultimasVentasHtml() {
   const v = db.ventas.filter((x) => diaDe(x.fecha) === hoy()).slice(-5).reverse();
@@ -305,6 +340,7 @@ function verVenta(id) {
     <div class="sub">${new Date(v.fecha).toLocaleString('es-AR')} · ${esc(v.medio)}</div>
     <ul class="lista">${v.items.map((i) => `<li><div class="info">${i.cant}× ${esc(i.nombre)}</div><div class="monto">${plata(i.precio * i.cant)}</div></li>`).join('')}</ul>
     ${v.descuento ? `<div class="sub">Subtotal ${plata(v.subtotal)} · Descuento −${plata(v.descuento)}</div>` : ''}
+    ${v.pagaCon != null ? `<div class="sub">Pagó con ${plata(v.pagaCon)} · Vuelto ${plata(v.vuelto)}</div>` : ''}
     <div class="total"><span>Total</span><span>${plata(v.total)}</span></div>
     ${v.anulada ? '<div class="aviso">Esta venta está anulada.</div>' : ''}
     <div class="modal-botones">
