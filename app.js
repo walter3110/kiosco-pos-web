@@ -2,7 +2,7 @@
    Todo se guarda en el navegador (localStorage). Sin servidor. */
 
 const CLAVE = 'kiosco_pos_v1';
-const VERSION = '2.1 · WRC tech';
+const VERSION = '2.2 · WRC tech';
 let pedidoInstalar = null;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); pedidoInstalar = e; if (tab === 'mas') render(); });
 window.addEventListener('appinstalled', () => { pedidoInstalar = null; toast('¡App instalada!'); });
@@ -10,7 +10,7 @@ const MEDIOS = ['Efectivo', 'Débito', 'Crédito', 'Transferencia', 'Mercado Pag
 
 // ---------- Datos ----------
 const datosIniciales = () => ({
-  negocio: 'Mi Kiosco',
+  negocio: 'Mi negocio',
   cajero: '',
   ultimoNro: 0,
   productos: [],
@@ -800,7 +800,7 @@ function vistaMas() {
     <div class="firma">Sistema desarrollado por <b>WRC tech</b></div>`;
 
   document.querySelectorAll('[data-per]').forEach((b) => (b.onclick = () => { periodo = +b.dataset.per; vistaMas(); }));
-  $('#neg').onchange = (e) => { db.negocio = e.target.value.trim() || 'Mi Kiosco'; guardar(); render(); };
+  $('#neg').onchange = (e) => { db.negocio = e.target.value.trim() || 'Mi negocio'; guardar(); render(); };
   $('#caj').onchange = (e) => { db.cajero = e.target.value.trim(); guardar(); render(); };
   $('#exp').onclick = exportar;
   $('#imp').onclick = () => $('#archivo').click();

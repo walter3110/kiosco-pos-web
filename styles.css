@@ -338,3 +338,14 @@ kbd, .kbd {
 .nav-marca b span { font-weight: 400; color: #8fb3e8; }
 .firma { text-align: center; font-size: .78rem; color: var(--gris); margin: 18px 0 6px; }
 .firma b { color: var(--marino); }
+
+/* Marca en el encabezado: en celular "WRC tech" + negocio; en PC solo el negocio (la marca está en el menú) */
+.marca-txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.marca-wrc { margin: 0; font-size: 1.2rem; font-weight: 800; white-space: nowrap; }
+.marca-wrc span { font-weight: 400; color: #8fb3e8; }
+#negocio { font-size: .8rem; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 900px) {
+  .marca-wrc { display: none; }
+  #negocio { font-size: 1.05rem; font-weight: 700; color: var(--gris); opacity: 1; }
+}
+@media (max-width: 560px) { .lector input { font-size: 1rem; } }
